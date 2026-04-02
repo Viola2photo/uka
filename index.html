@@ -789,7 +789,6 @@
 
         const StockInTab = ({ items, inventory, onSubmit, onUpdateInv, expenseNames, transactions, role }) => {
             const isReadonly = role === ROLES.VIEWER;
-            // ... (keep StockInTab state and logic identical to original, just apply readonly-mode)
             const [stockCart, setStockCart] = useState({}); 
             const [otherExpenseName, setOtherExpenseName] = useState(''); 
             const [otherExpenseAmount, setOtherExpenseAmount] = useState(''); 
@@ -1008,6 +1007,10 @@
 
         const ReportTab = ({ transactions, onDelete, items, role }) => {
             const isReadonly = role === ROLES.VIEWER;
+            // 新增這兩個狀態來控制畫面呈現與報告分類
+            const [viewMode, setViewMode] = useState('dashboard'); // 'dashboard' | 'monthly'
+            const [reportCategory, setReportCategory] = useState('all'); // 'all', 'shipment', 'direct', 'franchise'
+
             const [start, setStart] = useState(moment().startOf('month').format('YYYY-MM-DD'));
             const [end, setEnd] = useState(moment().endOf('month').format('YYYY-MM-DD'));
             const [filterType, setFilterType] = useState('all');
@@ -1039,6 +1042,79 @@
             }, [allTransInRange]);
 
             const companyNetProfit = (stats.shipmentRev + stats.franchiseRev + stats.directStoreSales) - (stats.shipmentCost + stats.franchiseCost + stats.transferCost + stats.expenses + stats.directStoreExp + stats.directStoreCost);
+            
+            // 新增：月結報表資料處理
+            const monthlyData = useMemo(() => {
+                const grouped = {};
+                const totals = {
+                    shipment: { rev: 0, cost: 0, profit: 0 },
+                    direct: { rev: 0, cost: 0, profit: 0 },
+                    franchise: { rev: 0, cost: 0, profit: 0 }
+                };
+
+                allTransInRange.forEach(t => {
+                    const month = moment(t.date).format('YYYY-MM');
+                    if (!grouped[month]) {
+                        grouped[month] = {
+                            shipment: { rev: 0, cost: 0, profit: 0 },
+                            direct: { rev: 0, cost: 0, profit: 0 },
+                            franchise: { rev: 0, cost: 0, profit: 0 }
+                        };
+                    }
+
+                    if (t.type === '出貨') {
+                        grouped[month].shipment.rev += t.income;
+                        grouped[month].shipment.cost += t.cost;
+                        grouped[month].shipment.profit += t.profit;
+
+                        totals.shipment.rev += t.income;
+                        totals.shipment.cost += t.cost;
+                        totals.shipment.profit += t.profit;
+                    } else if (t.type === '直營報表') {
+                        grouped[month].direct.rev += t.income;
+                        const expense = t.rawExpenses || 0;
+                        const cogs = t.cost - expense;
+                        const totalCost = expense + cogs;
+                        
+                        grouped[month].direct.cost += totalCost;
+                        grouped[month].direct.profit += (t.income - totalCost);
+
+                        totals.direct.rev += t.income;
+                        totals.direct.cost += totalCost;
+                        totals.direct.profit += (t.income - totalCost);
+                    } else if (t.type === '加盟') {
+                        grouped[month].franchise.rev += t.income;
+                        grouped[month].franchise.cost += t.cost;
+                        grouped[month].franchise.profit += t.profit;
+
+                        totals.franchise.rev += t.income;
+                        totals.franchise.cost += t.cost;
+                        totals.franchise.profit += t.profit;
+                    }
+                });
+
+                return {
+                    months: Object.keys(grouped).sort((a,b) => b.localeCompare(a)), // 降序排列
+                    grouped,
+                    totals
+                };
+            }, [allTransInRange]);
+
+            const getGrandTotal = () => {
+                let rev = 0, cost = 0, profit = 0;
+                if (reportCategory === 'all' || reportCategory === 'shipment') {
+                    rev += monthlyData.totals.shipment.rev; cost += monthlyData.totals.shipment.cost; profit += monthlyData.totals.shipment.profit;
+                }
+                if (reportCategory === 'all' || reportCategory === 'direct') {
+                    rev += monthlyData.totals.direct.rev; cost += monthlyData.totals.direct.cost; profit += monthlyData.totals.direct.profit;
+                }
+                if (reportCategory === 'all' || reportCategory === 'franchise') {
+                    rev += monthlyData.totals.franchise.rev; cost += monthlyData.totals.franchise.cost; profit += monthlyData.totals.franchise.profit;
+                }
+                return { rev, cost, profit };
+            };
+
+
             const expenseBreakdown = useMemo(() => {
                 const map = {};
                 allTransInRange.forEach(t => {
@@ -1057,50 +1133,175 @@
             }, [allTransInRange]);
 
             useEffect(() => {
-                if(expenseChart.current) expenseChart.current.destroy(); if(franchiseChart.current) franchiseChart.current.destroy();
-                if (expenseChartRef.current) expenseChart.current = new Chart(expenseChartRef.current, { type: 'pie', data: { labels: Object.keys(expenseBreakdown), datasets: [{ data: Object.values(expenseBreakdown), backgroundColor: ['#ef4444', '#f97316', '#eab308', '#84cc16', '#06b6d4', '#6366f1'] }] }, options: { plugins: { title: { display: true, text: '公司總支出分布' }, legend: { position: 'bottom' } } } });
-                if (franchiseChartRef.current) { const franchises = Object.keys(frozenStats.franchiseMap); franchiseChart.current = new Chart(franchiseChartRef.current, { type: 'bar', data: { labels: franchises, datasets: [ { label: '花枝($)', data: franchises.map(f => frozenStats.franchiseMap[f].cut), backgroundColor: '#3b82f6', stack:'0' }, { label: '墨魚($)', data: franchises.map(f => frozenStats.franchiseMap[f].squid), backgroundColor: '#1d4ed8', stack:'0' }, { label: '蝦球($)', data: franchises.map(f => frozenStats.franchiseMap[f].shrimp), backgroundColor: '#60a5fa', stack:'0' }, { label: '牛蒡($)', data: franchises.map(f => frozenStats.franchiseMap[f].burdock), backgroundColor: '#93c5fd', stack:'0' } ] }, options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { title: { display: true, text: '各加盟店四大冷凍品進貨金額' }, legend: { position: 'bottom' } } } }); }
-            }, [expenseBreakdown, frozenStats]);
+                if(viewMode === 'dashboard') {
+                    if(expenseChart.current) expenseChart.current.destroy(); if(franchiseChart.current) franchiseChart.current.destroy();
+                    if (expenseChartRef.current) expenseChart.current = new Chart(expenseChartRef.current, { type: 'pie', data: { labels: Object.keys(expenseBreakdown), datasets: [{ data: Object.values(expenseBreakdown), backgroundColor: ['#ef4444', '#f97316', '#eab308', '#84cc16', '#06b6d4', '#6366f1'] }] }, options: { plugins: { title: { display: true, text: '公司總支出分布' }, legend: { position: 'bottom' } } } });
+                    if (franchiseChartRef.current) { const franchises = Object.keys(frozenStats.franchiseMap); franchiseChart.current = new Chart(franchiseChartRef.current, { type: 'bar', data: { labels: franchises, datasets: [ { label: '花枝($)', data: franchises.map(f => frozenStats.franchiseMap[f].cut), backgroundColor: '#3b82f6', stack:'0' }, { label: '墨魚($)', data: franchises.map(f => frozenStats.franchiseMap[f].squid), backgroundColor: '#1d4ed8', stack:'0' }, { label: '蝦球($)', data: franchises.map(f => frozenStats.franchiseMap[f].shrimp), backgroundColor: '#60a5fa', stack:'0' }, { label: '牛蒡($)', data: franchises.map(f => frozenStats.franchiseMap[f].burdock), backgroundColor: '#93c5fd', stack:'0' } ] }, options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { title: { display: true, text: '各加盟店四大冷凍品進貨金額' }, legend: { position: 'bottom' } } } }); }
+                }
+            }, [expenseBreakdown, frozenStats, viewMode]);
 
             return (
                 <div className="space-y-6">
-                    <div className="bg-white p-4 rounded shadow flex items-center gap-4"><h2 className="font-bold">區間選擇</h2><input type="date" value={start} onChange={e => setStart(e.target.value)} className="border p-1 rounded" /><span>to</span><input type="date" value={end} onChange={e => setEnd(e.target.value)} className="border p-1 rounded" /></div>
+                    <div className="flex space-x-2 border-b mb-4">
+                        <button onClick={()=>setViewMode('dashboard')} className={`pb-2 px-4 ${viewMode==='dashboard'?'border-b-2 border-indigo-600 font-bold text-indigo-600':'text-gray-500'}`}>總覽儀表板</button>
+                        <button onClick={()=>setViewMode('monthly')} className={`pb-2 px-4 ${viewMode==='monthly'?'border-b-2 border-indigo-600 font-bold text-indigo-600':'text-gray-500'}`}>區間月結報表</button>
+                    </div>
+
+                    <div className="bg-white p-4 rounded shadow flex items-center gap-4">
+                        <h2 className="font-bold">區間選擇</h2>
+                        <input type="date" value={start} onChange={e => setStart(e.target.value)} className="border p-1 rounded" />
+                        <span>to</span>
+                        <input type="date" value={end} onChange={e => setEnd(e.target.value)} className="border p-1 rounded" />
+                    </div>
                     
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        <div className="bg-blue-50 p-3 rounded shadow border-l-4 border-blue-500"><div className="text-xs text-gray-500 font-bold mb-1">加盟出貨</div><div className="flex justify-between items-baseline"><span className="text-xs text-gray-400">總計</span><span className="text-lg font-bold text-blue-700">${stats.shipmentRev.toLocaleString()}</span></div><div className="flex justify-between items-baseline"><span className="text-xs text-gray-400">毛利</span><span className="text-sm font-bold text-green-600">+${stats.shipmentMargin.toLocaleString()}</span></div></div>
-                        <div className="bg-cyan-50 p-3 rounded shadow border-l-4 border-cyan-500"><div className="text-xs text-gray-500 font-bold mb-1">直營店 (湳雅)</div><div className="flex justify-between items-baseline"><span className="text-xs text-gray-400">業績</span><span className="text-lg font-bold text-cyan-700">${stats.directStoreSales.toLocaleString()}</span></div><div className="flex justify-between items-baseline"><span className="text-xs text-gray-400">總支出</span><span className="text-sm text-red-400">-${(stats.directStoreExp + stats.directStoreCost).toLocaleString()}</span></div><div className="border-t border-cyan-200 mt-1 pt-1 flex justify-between"><span className="text-xs font-bold">淨利</span><span className={`text-sm font-bold ${stats.directStoreNet>=0?'text-green-600':'text-red-600'}`}>${stats.directStoreNet.toLocaleString()}</span></div></div>
-                        <div className="bg-indigo-50 p-3 rounded shadow border-l-4 border-indigo-500"><div className="text-xs text-gray-500 font-bold mb-1">加盟開通</div><div className="flex justify-between items-baseline"><span className="text-xs text-gray-400">收入</span><span className="text-lg font-bold text-indigo-700">${stats.franchiseRev.toLocaleString()}</span></div><div className="flex justify-between items-baseline"><span className="text-xs text-gray-400">成本</span><span className="text-sm text-red-400">-${stats.franchiseCost.toLocaleString()}</span></div>{stats.franchiseTaxTotal > 0 && <div className="text-[10px] text-red-500 font-bold text-right mt-1">含發票稅額: ${stats.franchiseTaxTotal.toLocaleString()}</div>}<div className="border-t border-indigo-200 mt-1 pt-1 flex justify-between"><span className="text-xs font-bold">損益</span><span className="text-sm font-bold text-indigo-600">+${stats.franchiseProfit.toLocaleString()}</span></div></div>
-                        <div className="bg-yellow-50 p-3 rounded shadow border-l-4 border-yellow-500 flex flex-col justify-center"><div className="text-xs text-gray-500 font-bold mb-2">公司總淨利 (Net Profit)</div><div className={`text-2xl font-bold ${companyNetProfit>=0?'text-yellow-700':'text-red-600'}`}>${companyNetProfit.toLocaleString()}</div><div className="text-[10px] text-gray-400 mt-1">扣除調撥/營運雜支/直營成本</div></div>
-                    </div>
+                    {viewMode === 'dashboard' ? (
+                        <div className="space-y-6 animate-fade-in">
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                <div className="bg-blue-50 p-3 rounded shadow border-l-4 border-blue-500"><div className="text-xs text-gray-500 font-bold mb-1">加盟出貨</div><div className="flex justify-between items-baseline"><span className="text-xs text-gray-400">總計</span><span className="text-lg font-bold text-blue-700">${stats.shipmentRev.toLocaleString()}</span></div><div className="flex justify-between items-baseline"><span className="text-xs text-gray-400">毛利</span><span className="text-sm font-bold text-green-600">+${stats.shipmentMargin.toLocaleString()}</span></div></div>
+                                <div className="bg-cyan-50 p-3 rounded shadow border-l-4 border-cyan-500"><div className="text-xs text-gray-500 font-bold mb-1">直營店 (湳雅)</div><div className="flex justify-between items-baseline"><span className="text-xs text-gray-400">業績</span><span className="text-lg font-bold text-cyan-700">${stats.directStoreSales.toLocaleString()}</span></div><div className="flex justify-between items-baseline"><span className="text-xs text-gray-400">總支出</span><span className="text-sm text-red-400">-${(stats.directStoreExp + stats.directStoreCost).toLocaleString()}</span></div><div className="border-t border-cyan-200 mt-1 pt-1 flex justify-between"><span className="text-xs font-bold">淨利</span><span className={`text-sm font-bold ${stats.directStoreNet>=0?'text-green-600':'text-red-600'}`}>${stats.directStoreNet.toLocaleString()}</span></div></div>
+                                <div className="bg-indigo-50 p-3 rounded shadow border-l-4 border-indigo-500"><div className="text-xs text-gray-500 font-bold mb-1">加盟開通</div><div className="flex justify-between items-baseline"><span className="text-xs text-gray-400">收入</span><span className="text-lg font-bold text-indigo-700">${stats.franchiseRev.toLocaleString()}</span></div><div className="flex justify-between items-baseline"><span className="text-xs text-gray-400">成本</span><span className="text-sm text-red-400">-${stats.franchiseCost.toLocaleString()}</span></div>{stats.franchiseTaxTotal > 0 && <div className="text-[10px] text-red-500 font-bold text-right mt-1">含發票稅額: ${stats.franchiseTaxTotal.toLocaleString()}</div>}<div className="border-t border-indigo-200 mt-1 pt-1 flex justify-between"><span className="text-xs font-bold">損益</span><span className="text-sm font-bold text-indigo-600">+${stats.franchiseProfit.toLocaleString()}</span></div></div>
+                                <div className="bg-yellow-50 p-3 rounded shadow border-l-4 border-yellow-500 flex flex-col justify-center"><div className="text-xs text-gray-500 font-bold mb-2">公司總淨利 (Net Profit)</div><div className={`text-2xl font-bold ${companyNetProfit>=0?'text-yellow-700':'text-red-600'}`}>${companyNetProfit.toLocaleString()}</div><div className="text-[10px] text-gray-400 mt-1">扣除調撥/營運雜支/直營成本</div></div>
+                            </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="bg-white p-4 rounded shadow h-[350px]"><canvas ref={expenseChartRef}></canvas></div>
-                        <div className="bg-white p-4 rounded shadow h-[350px] flex flex-col"><div className="flex gap-2 text-xs font-bold text-gray-500 mb-2 justify-center bg-gray-50 p-2 rounded"><span>花枝: {frozenStats.totalQty.cut}箱</span><span>墨魚: {frozenStats.totalQty.squid}箱</span><span>蝦球: {frozenStats.totalQty.shrimp}箱</span><span>牛蒡: {frozenStats.totalQty.burdock}箱</span></div><div className="flex-1 relative"><canvas ref={franchiseChartRef}></canvas></div></div>
-                    </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="bg-white p-4 rounded shadow h-[350px]"><canvas ref={expenseChartRef}></canvas></div>
+                                <div className="bg-white p-4 rounded shadow h-[350px] flex flex-col"><div className="flex gap-2 text-xs font-bold text-gray-500 mb-2 justify-center bg-gray-50 p-2 rounded"><span>花枝: {frozenStats.totalQty.cut}箱</span><span>墨魚: {frozenStats.totalQty.squid}箱</span><span>蝦球: {frozenStats.totalQty.shrimp}箱</span><span>牛蒡: {frozenStats.totalQty.burdock}箱</span></div><div className="flex-1 relative"><canvas ref={franchiseChartRef}></canvas></div></div>
+                            </div>
 
-                    <div className="bg-white p-4 rounded shadow">
-                        <div className="flex justify-between items-center mb-4 border-b pb-2">
-                            <h3 className="font-bold text-gray-700">交易流水帳</h3>
-                            <select value={filterType} onChange={e=>setFilterType(e.target.value)} className="border p-1 rounded text-sm"><option value="all">全部顯示</option><option value="order">出貨紀錄</option><option value="transfer">調撥紀錄</option><option value="stockIn">進貨/支出</option><option value="franchise">加盟開通</option></select>
-                        </div>
-                        <div className="space-y-2 max-h-[500px] overflow-y-auto">
-                            {displayTrans.map(t => (
-                                <div key={t.id} className="border rounded p-3 text-sm relative hover:bg-gray-50">
-                                    <div className="flex justify-between font-bold mb-1">
-                                        <span className="flex items-center gap-2">
-                                            <span className={`px-2 py-0.5 rounded text-white text-xs ${t.type==='出貨'?'bg-blue-500':t.type==='直營報表'?'bg-cyan-500':t.type==='加盟'?'bg-indigo-500':t.type==='進貨/支出'?'bg-red-500':'bg-gray-500'}`}>{t.type}</span>
-                                            <span>{t.date}</span>
-                                            <span className="text-gray-600">- {t.franchise}</span>
-                                            {t.createdBy && <span className="text-[10px] text-gray-400 ml-2">({t.createdBy.split('@')[0]})</span>}
-                                        </span>
-                                        <span className={t.total < 0 ? 'text-red-500' : 'text-green-600'}>${t.total?.toLocaleString()}</span>
-                                    </div>
-                                    <pre className="text-xs text-gray-500 whitespace-pre-wrap font-sans bg-gray-100 p-2 rounded">{t.content}</pre>
-                                    {!isReadonly && <button onClick={() => onDelete(t.id, t.type)} className="absolute top-3 right-3 text-gray-300 hover:text-red-500"><i className="fa-solid fa-trash"></i></button>}
+                            <div className="bg-white p-4 rounded shadow">
+                                <div className="flex justify-between items-center mb-4 border-b pb-2">
+                                    <h3 className="font-bold text-gray-700">交易流水帳</h3>
+                                    <select value={filterType} onChange={e=>setFilterType(e.target.value)} className="border p-1 rounded text-sm"><option value="all">全部顯示</option><option value="order">出貨紀錄</option><option value="transfer">調撥紀錄</option><option value="stockIn">進貨/支出</option><option value="franchise">加盟開通</option></select>
                                 </div>
-                            ))}
+                                <div className="space-y-2 max-h-[500px] overflow-y-auto">
+                                    {displayTrans.map(t => (
+                                        <div key={t.id} className="border rounded p-3 text-sm relative hover:bg-gray-50">
+                                            <div className="flex justify-between font-bold mb-1">
+                                                <span className="flex items-center gap-2">
+                                                    <span className={`px-2 py-0.5 rounded text-white text-xs ${t.type==='出貨'?'bg-blue-500':t.type==='直營報表'?'bg-cyan-500':t.type==='加盟'?'bg-indigo-500':t.type==='進貨/支出'?'bg-red-500':'bg-gray-500'}`}>{t.type}</span>
+                                                    <span>{t.date}</span>
+                                                    <span className="text-gray-600">- {t.franchise}</span>
+                                                    {t.createdBy && <span className="text-[10px] text-gray-400 ml-2">({t.createdBy.split('@')[0]})</span>}
+                                                </span>
+                                                <span className={t.total < 0 ? 'text-red-500' : 'text-green-600'}>${t.total?.toLocaleString()}</span>
+                                            </div>
+                                            <pre className="text-xs text-gray-500 whitespace-pre-wrap font-sans bg-gray-100 p-2 rounded">{t.content}</pre>
+                                            {!isReadonly && <button onClick={() => onDelete(t.id, t.type)} className="absolute top-3 right-3 text-gray-300 hover:text-red-500"><i className="fa-solid fa-trash"></i></button>}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
                         </div>
-                    </div>
+                    ) : (
+                        <div className="bg-white p-4 rounded shadow animate-fade-in">
+                            <div className="flex justify-between items-center mb-4 border-b pb-2">
+                                <h3 className="font-bold text-gray-700">區間月結報表 <span className="text-sm font-normal text-gray-500 ml-2">依照所選日期進行分類與分月呈現</span></h3>
+                                <select value={reportCategory} onChange={e=>setReportCategory(e.target.value)} className="border p-1 rounded text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold">
+                                    <option value="all">綜合檢視 (全部)</option>
+                                    <option value="shipment">僅顯示：出貨報表</option>
+                                    <option value="direct">僅顯示：直營報表</option>
+                                    <option value="franchise">僅顯示：加盟開通</option>
+                                </select>
+                            </div>
+
+                            {/* 總結算區塊 */}
+                            <div className="bg-slate-50 p-4 rounded-lg border mb-6">
+                                <div className="flex justify-between items-center mb-4">
+                                    <h4 className="font-bold text-slate-700">區間總結算明細 ({start} ~ {end})</h4>
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    { (reportCategory === 'all' || reportCategory === 'shipment') && (
+                                        <div className="bg-white p-3 rounded shadow-sm border-l-4 border-blue-500">
+                                            <div className="text-xs font-bold text-gray-500 mb-2">出貨總計</div>
+                                            <div className="flex justify-between"><span className="text-gray-500 text-sm">營收:</span><span className="font-bold text-gray-700">${monthlyData.totals.shipment.rev.toLocaleString()}</span></div>
+                                            <div className="flex justify-between"><span className="text-gray-500 text-sm">成本:</span><span className="font-bold text-red-500">-${monthlyData.totals.shipment.cost.toLocaleString()}</span></div>
+                                            <div className="flex justify-between border-t mt-2 pt-2"><span className="text-gray-500 text-sm font-bold">淨利:</span><span className="font-bold text-blue-600">${monthlyData.totals.shipment.profit.toLocaleString()}</span></div>
+                                        </div>
+                                    )}
+                                    { (reportCategory === 'all' || reportCategory === 'direct') && (
+                                        <div className="bg-white p-3 rounded shadow-sm border-l-4 border-cyan-500">
+                                            <div className="text-xs font-bold text-gray-500 mb-2">直營總計</div>
+                                            <div className="flex justify-between"><span className="text-gray-500 text-sm">營收:</span><span className="font-bold text-gray-700">${monthlyData.totals.direct.rev.toLocaleString()}</span></div>
+                                            <div className="flex justify-between"><span className="text-gray-500 text-sm">成本(含雜支):</span><span className="font-bold text-red-500">-${monthlyData.totals.direct.cost.toLocaleString()}</span></div>
+                                            <div className="flex justify-between border-t mt-2 pt-2"><span className="text-gray-500 text-sm font-bold">淨利:</span><span className={`font-bold ${monthlyData.totals.direct.profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>${monthlyData.totals.direct.profit.toLocaleString()}</span></div>
+                                        </div>
+                                    )}
+                                    { (reportCategory === 'all' || reportCategory === 'franchise') && (
+                                        <div className="bg-white p-3 rounded shadow-sm border-l-4 border-indigo-500">
+                                            <div className="text-xs font-bold text-gray-500 mb-2">加盟開通總計</div>
+                                            <div className="flex justify-between"><span className="text-gray-500 text-sm">營收:</span><span className="font-bold text-gray-700">${monthlyData.totals.franchise.rev.toLocaleString()}</span></div>
+                                            <div className="flex justify-between"><span className="text-gray-500 text-sm">成本(含隱形):</span><span className="font-bold text-red-500">-${monthlyData.totals.franchise.cost.toLocaleString()}</span></div>
+                                            <div className="flex justify-between border-t mt-2 pt-2"><span className="text-gray-500 text-sm font-bold">淨利:</span><span className="font-bold text-indigo-600">${monthlyData.totals.franchise.profit.toLocaleString()}</span></div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* 單一過濾的加總儀表板 */}
+                                {(() => {
+                                    const grand = getGrandTotal();
+                                    return (
+                                        <div className="mt-4 p-3 bg-indigo-100 rounded border border-indigo-200 flex flex-col md:flex-row justify-between items-center shadow-inner">
+                                            <span className="font-bold text-indigo-800 mb-2 md:mb-0">
+                                                <i className="fa-solid fa-calculator mr-2"></i>
+                                                選定範圍與項目總結算 ({reportCategory === 'all' ? '出貨+直營+加盟' : reportCategory === 'shipment' ? '出貨' : reportCategory === 'direct' ? '直營' : '加盟'})
+                                            </span>
+                                            <div className="flex space-x-6">
+                                                <span className="text-sm">總營收: <span className="font-bold text-indigo-700 text-base">${grand.rev.toLocaleString()}</span></span>
+                                                <span className="text-sm">總成本: <span className="font-bold text-red-500 text-base">-${grand.cost.toLocaleString()}</span></span>
+                                                <span className="text-sm font-bold bg-white px-2 py-0.5 rounded shadow-sm">
+                                                    總淨利: <span className={`text-base ${grand.profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>${grand.profit.toLocaleString()}</span>
+                                                </span>
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
+                            </div>
+
+                            {/* 每月明細 */}
+                            <div className="space-y-4">
+                                <h4 className="font-bold text-gray-700">每月分組明細</h4>
+                                {monthlyData.months.map(month => (
+                                    <div key={month} className="border border-gray-200 rounded-lg overflow-hidden shadow-sm">
+                                        <div className="bg-gray-100 p-2 font-bold text-gray-700 border-b flex items-center">
+                                            <i className="fa-regular fa-calendar-alt mr-2 text-gray-500"></i> {month}
+                                        </div>
+                                        <div className="p-3 bg-white grid grid-cols-1 md:grid-cols-3 gap-6">
+                                            { (reportCategory === 'all' || reportCategory === 'shipment') && (
+                                                <div>
+                                                    <div className="text-xs font-bold text-blue-600 mb-2 pb-1 border-b border-blue-100">出貨報表</div>
+                                                    <div className="text-sm flex justify-between mb-1"><span className="text-gray-500">營收:</span><span className="font-medium">${monthlyData.grouped[month].shipment.rev.toLocaleString()}</span></div>
+                                                    <div className="text-sm flex justify-between mb-1"><span className="text-gray-500">成本:</span><span className="text-red-400">-${monthlyData.grouped[month].shipment.cost.toLocaleString()}</span></div>
+                                                    <div className="text-sm flex justify-between font-bold pt-1 mt-1 border-t border-dashed"><span className="text-gray-600">淨利:</span><span className="text-blue-600">${monthlyData.grouped[month].shipment.profit.toLocaleString()}</span></div>
+                                                </div>
+                                            )}
+                                            { (reportCategory === 'all' || reportCategory === 'direct') && (
+                                                <div>
+                                                    <div className="text-xs font-bold text-cyan-600 mb-2 pb-1 border-b border-cyan-100">直營報表</div>
+                                                    <div className="text-sm flex justify-between mb-1"><span className="text-gray-500">營收:</span><span className="font-medium">${monthlyData.grouped[month].direct.rev.toLocaleString()}</span></div>
+                                                    <div className="text-sm flex justify-between mb-1"><span className="text-gray-500">成本:</span><span className="text-red-400">-${monthlyData.grouped[month].direct.cost.toLocaleString()}</span></div>
+                                                    <div className="text-sm flex justify-between font-bold pt-1 mt-1 border-t border-dashed"><span className="text-gray-600">淨利:</span><span className={monthlyData.grouped[month].direct.profit >= 0 ? 'text-green-600' : 'text-red-600'}>${monthlyData.grouped[month].direct.profit.toLocaleString()}</span></div>
+                                                </div>
+                                            )}
+                                            { (reportCategory === 'all' || reportCategory === 'franchise') && (
+                                                <div>
+                                                    <div className="text-xs font-bold text-indigo-600 mb-2 pb-1 border-b border-indigo-100">加盟開通</div>
+                                                    <div className="text-sm flex justify-between mb-1"><span className="text-gray-500">營收:</span><span className="font-medium">${monthlyData.grouped[month].franchise.rev.toLocaleString()}</span></div>
+                                                    <div className="text-sm flex justify-between mb-1"><span className="text-gray-500">成本:</span><span className="text-red-400">-${monthlyData.grouped[month].franchise.cost.toLocaleString()}</span></div>
+                                                    <div className="text-sm flex justify-between font-bold pt-1 mt-1 border-t border-dashed"><span className="text-gray-600">淨利:</span><span className="text-indigo-600">${monthlyData.grouped[month].franchise.profit.toLocaleString()}</span></div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                                {monthlyData.months.length === 0 && (
+                                    <div className="text-center text-gray-400 p-8 border-2 border-dashed border-gray-200 rounded-lg">
+                                        <i className="fa-regular fa-folder-open text-2xl mb-2"></i>
+                                        <p>此區間內沒有符合條件的報表資料</p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
                 </div>
             );
         };
