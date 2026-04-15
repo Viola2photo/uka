@@ -32,7 +32,6 @@
         .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-        /* 針對 View 模式禁用點擊的樣式 */
         .readonly-mode { pointer-events: none; opacity: 0.7; filter: grayscale(20%); }
     </style>
 </head>
@@ -60,22 +59,18 @@
             try { firebase.initializeApp(firebaseConfig); } catch (e) { console.error("Firebase Init Error:", e); }
         }
 
-        // --- 權限管理設定 ---
         const ROLES = {
-            ADMIN: 'admin',       // 管理員：全部權限
-            OPERATOR: 'operator', // 操作員：僅直營頁面
-            VIEWER: 'viewer'      // 檢視員：僅檢視，無法修改
+            ADMIN: 'admin',
+            OPERATOR: 'operator',
+            VIEWER: 'viewer'
         };
 
         const checkUserRole = (email) => {
             if (!email) return ROLES.VIEWER;
             if (email.toLowerCase() === 'a0935505590@gmail.com') return ROLES.OPERATOR;
             if (email.toLowerCase() === 'aa0980115055@gmail.com') return ROLES.VIEWER;
-            // 除了上述兩人外，預設將登入者視為管理員 (包含您自己)
-            // 若未來需更嚴謹，可將您的 Email 寫死，其他人預設為 Viewer
             return ROLES.ADMIN;
         };
-        // ------------------
 
         const formatBoxQty = (val) => {
             if (val === undefined || val === null) return '0';
@@ -152,23 +147,17 @@
 
             if (frozen.length > 0) {
                 text += `[箱裝]\n`;
-                frozen.forEach(item => {
-                    text += `${item.name} x ${item.qty}${item.unit} = $${(item.price * item.qty).toLocaleString()}\n`;
-                });
+                frozen.forEach(item => { text += `${item.name} x ${item.qty}${item.unit} = $${(item.price * item.qty).toLocaleString()}\n`; });
             }
             if (others.length > 0) {
                 if (frozen.length > 0) text += `\n`;
                 text += `[其他品項]\n`;
-                others.forEach(item => {
-                    text += `${item.name} x ${item.qty}${item.unit} = $${(item.price * item.qty).toLocaleString()}\n`;
-                });
+                others.forEach(item => { text += `${item.name} x ${item.qty}${item.unit} = $${(item.price * item.qty).toLocaleString()}\n`; });
             }
             if (shippingFee !== 0 || extraItems.length > 0) {
                 text += `\n[其他費用]\n`;
                 if(shippingFee !== 0) text += `運費: $${shippingFee}\n`;
-                extraItems.forEach(item => {
-                    text += `${item.name}: $${item.amount}\n`;
-                });
+                extraItems.forEach(item => { text += `${item.name}: $${item.amount}\n`; });
             }
             text += `------------------\n`;
             let grandTotal = 0;
@@ -199,14 +188,9 @@
                         setLoading(true);
                         const userRole = checkUserRole(u.email);
                         setRole(userRole);
-                        
-                        // 針對 Operator 強制跳到直營頁面
                         if (userRole === ROLES.OPERATOR) setActiveTab('direct');
 
-                        // ⭐ 關鍵修改：將路徑改為全公司共用的路徑，不再使用 user.uid
-                        // 這樣所有人存取的都是同一份資料庫
                         const sharedRef = firebase.firestore().collection('company_data').doc('main_system');
-                        
                         const unsubTrans = sharedRef.collection('transactions').orderBy('id', 'desc').onSnapshot(snap => {
                             const list = [];
                             snap.forEach(doc => list.push(doc.data()));
@@ -219,11 +203,7 @@
                         const unsubSettings = sharedRef.collection('data').doc('settings').onSnapshot(doc => {
                             if (doc.exists) {
                                 const data = doc.data();
-                                setAppSettings({
-                                    items: data.items || DEFAULT_SETTINGS.items,
-                                    constants: { ...DEFAULT_SETTINGS.constants, ...(data.constants || {}) },
-                                    starterPack: data.starterPack || DEFAULT_SETTINGS.starterPack
-                                });
+                                setAppSettings({ items: data.items || DEFAULT_SETTINGS.items, constants: { ...DEFAULT_SETTINGS.constants, ...(data.constants || {}) }, starterPack: data.starterPack || DEFAULT_SETTINGS.starterPack });
                             } else {
                                 sharedRef.collection('data').doc('settings').set(DEFAULT_SETTINGS);
                                 setAppSettings(DEFAULT_SETTINGS);
@@ -236,16 +216,9 @@
                 return () => unsub();
             }, []);
 
-            // 權限攔截器：如果沒有權限就擋下動作
             const checkWritePermission = (actionType = 'general') => {
-                if (role === ROLES.VIEWER) {
-                    alert('權限不足：您目前的帳號僅有「檢視」權限。');
-                    return false;
-                }
-                if (role === ROLES.OPERATOR && actionType !== 'direct') {
-                    alert('權限不足：您的帳號僅能操作「直營」相關功能。');
-                    return false;
-                }
+                if (role === ROLES.VIEWER) { alert('權限不足：您目前的帳號僅有「檢視」權限。'); return false; }
+                if (role === ROLES.OPERATOR && actionType !== 'direct') { alert('權限不足：您的帳號僅能操作「直營」相關功能。'); return false; }
                 return true;
             };
 
@@ -253,20 +226,14 @@
                 if (!user || !db) return;
                 if (!checkWritePermission()) return;
                 const invRef = db.collection('company_data').doc('main_system').collection('data').doc('inventory');
-                if (isSet) {
-                     invRef.update({ [id]: change }).catch(() => invRef.set({ [id]: change }, { merge: true }));
-                } else {
-                     invRef.update({ [id]: firebase.firestore.FieldValue.increment(change) }).catch(() => invRef.set({ [id]: change }, { merge: true }));
-                }
+                if (isSet) invRef.update({ [id]: change }).catch(() => invRef.set({ [id]: change }, { merge: true }));
+                else invRef.update({ [id]: firebase.firestore.FieldValue.increment(change) }).catch(() => invRef.set({ [id]: change }, { merge: true }));
             };
 
             const addTransaction = (record) => {
                 if (!user || !db) return;
-                // 特殊判斷：Operator 只能發送 直營報表
                 const actionType = record.type === '直營報表' ? 'direct' : 'general';
                 if (!checkWritePermission(actionType)) return;
-                
-                // 紀錄是誰建立的
                 record.createdBy = user.email;
                 db.collection('company_data').doc('main_system').collection('transactions').doc(String(record.id)).set(record);
             };
@@ -281,14 +248,12 @@
                 if (!user || !db) return;
                 const actionType = type === '直營報表' ? 'direct' : 'general';
                 if (!checkWritePermission(actionType)) return;
-
                 if (!confirm('確定要刪除此筆資料嗎？\n注意：這將會復原相關的庫存變動。')) return;
                 setLoading(true);
                 try {
                     const txRef = db.collection('company_data').doc('main_system').collection('transactions').doc(String(id));
                     const doc = await txRef.get();
                     if (!doc.exists) throw new Error('找不到該筆資料');
-                    
                     const tx = doc.data();
                     const batch = db.batch();
                     const invRef = db.collection('company_data').doc('main_system').collection('data').doc('inventory');
@@ -297,17 +262,11 @@
                     if ((tx.type === '出貨' || tx.type === '調撥' || tx.type === '直營報表') && tx.rawItems) {
                         tx.rawItems.forEach(item => { if (item.id) invUpdates[item.id] = firebase.firestore.FieldValue.increment(item.qty); });
                     } else if (tx.type === '進貨/支出' && tx.rawItems) {
-                        tx.rawItems.forEach(item => { 
-                             if (item.id) invUpdates[item.id] = firebase.firestore.FieldValue.increment(-item.qty); 
-                        });
+                        tx.rawItems.forEach(item => { if (item.id) invUpdates[item.id] = firebase.firestore.FieldValue.increment(-item.qty); });
                     } else if (tx.type === '庫存校正' && tx.rawItems) {
-                        tx.rawItems.forEach(item => {
-                            if (item.id) invUpdates[item.id] = firebase.firestore.FieldValue.increment(-item.change);
-                        });
+                        tx.rawItems.forEach(item => { if (item.id) invUpdates[item.id] = firebase.firestore.FieldValue.increment(-item.change); });
                     } else if (tx.type === '加盟' && tx.franchiseData && tx.franchiseData.starterPack) {
-                        tx.franchiseData.starterPack.forEach(item => {
-                            if(item.id !== 'equip_set') invUpdates[item.id] = firebase.firestore.FieldValue.increment(item.qty);
-                        });
+                        tx.franchiseData.starterPack.forEach(item => { if(item.id !== 'equip_set') invUpdates[item.id] = firebase.firestore.FieldValue.increment(item.qty); });
                     }
 
                     if (Object.keys(invUpdates).length > 0) batch.update(invRef, invUpdates);
@@ -320,9 +279,7 @@
             const saveSettings = (newSettings) => {
                 if (!user || !db) return;
                 if (!checkWritePermission()) return;
-                db.collection('company_data').doc('main_system').collection('data').doc('settings').set(newSettings)
-                    .then(() => alert('設定已儲存！'))
-                    .catch(err => alert('儲存失敗: ' + err.message));
+                db.collection('company_data').doc('main_system').collection('data').doc('settings').set(newSettings).then(() => alert('設定已儲存！')).catch(err => alert('儲存失敗: ' + err.message));
             };
 
             const uniqueFranchises = useMemo(() => {
@@ -339,9 +296,8 @@
 
             if (!user) return <LoginScreen />;
 
-            // 根據權限過濾可以看見的 Tab
             const ALL_TABS = [
-                {id: 'order', label: '出貨/調撥', icon: 'fa-truck'},
+                {id: 'order', label: '出貨/收款', icon: 'fa-truck'},
                 {id: 'stockIn', label: '進貨管理', icon: 'fa-dolly'},
                 {id: 'direct', label: '直營(湳雅)', icon: 'fa-store'},
                 {id: 'franchise', label: '加盟', icon: 'fa-handshake'},
@@ -351,8 +307,8 @@
 
             const visibleTabs = ALL_TABS.filter(tab => {
                 if (role === ROLES.ADMIN) return true;
-                if (role === ROLES.VIEWER) return tab.id !== 'settings'; // 檢視者看全部，但隱藏設定
-                if (role === ROLES.OPERATOR) return tab.id === 'direct'; // 操作員只能看直營
+                if (role === ROLES.VIEWER) return tab.id !== 'settings';
+                if (role === ROLES.OPERATOR) return tab.id === 'direct';
                 return false;
             });
 
@@ -375,18 +331,15 @@
                         </div>
                     </div>
                     
-                    {/* 若為 Viewer，顯示提示 */}
                     {role === ROLES.VIEWER && (
-                        <div className="bg-yellow-100 text-yellow-800 p-2 text-center text-xs font-bold shadow-inner">
-                            目前為「純檢視模式」，無法新增或修改任何資料。
-                        </div>
+                        <div className="bg-yellow-100 text-yellow-800 p-2 text-center text-xs font-bold shadow-inner">目前為「純檢視模式」，無法新增或修改任何資料。</div>
                     )}
 
                     <div className="p-4 mb-20 flex-1 overflow-y-auto">
                         {(loading || !appSettings) && <div className="text-center py-10 text-gray-500"><i className="fa-solid fa-spinner fa-spin mr-2"></i>資料讀取中...</div>}
                         {!loading && appSettings && (
                             <div className="animate-fade-in">
-                                {activeTab === 'order' && <OrderTab items={appSettings.items} inventory={inventory} onSubmit={addTransaction} onUpdateInv={updateInventory} franchises={uniqueFranchises} genReceipt={generateFormattedReceipt} role={role} />}
+                                {activeTab === 'order' && <OrderTab items={appSettings.items} inventory={inventory} onSubmit={addTransaction} onUpdateTrans={updateTransaction} transactions={transactions} onUpdateInv={updateInventory} franchises={uniqueFranchises} genReceipt={generateFormattedReceipt} role={role} />}
                                 {activeTab === 'stockIn' && <StockInTab items={appSettings.items} inventory={inventory} onSubmit={addTransaction} onUpdateInv={updateInventory} expenseNames={uniqueExpenseNames} transactions={transactions} role={role} />}
                                 {activeTab === 'direct' && <DirectStoreTab items={appSettings.items} inventory={inventory} onSubmit={addTransaction} onUpdateInv={updateInventory} transactions={transactions} onDelete={deleteTransaction} role={role} />}
                                 {activeTab === 'franchise' && <FranchiseTab items={appSettings.items} inventory={inventory} onSubmit={addTransaction} onUpdateInv={updateInventory} onUpdateTrans={updateTransaction} onDelete={deleteTransaction} transactions={transactions} franchises={uniqueFranchises} settings={appSettings} genReceipt={generateFormattedReceipt} role={role} />}
@@ -400,58 +353,25 @@
         };
 
         const LoginScreen = () => {
-            const [email, setEmail] = useState(''); 
-            const [pwd, setPwd] = useState(''); 
-            const [mode, setMode] = useState('login'); 
-            const [error, setError] = useState(''); 
-            const [loading, setLoading] = useState(false);
+            const [email, setEmail] = useState(''); const [pwd, setPwd] = useState(''); const [mode, setMode] = useState('login'); const [error, setError] = useState(''); const [loading, setLoading] = useState(false);
             
             const handleAuth = async (e) => { 
-                e.preventDefault(); 
-                if(loading) return; 
-                setLoading(true); setError(''); 
-                try { 
-                    if (mode === 'login') await firebase.auth().signInWithEmailAndPassword(email, pwd); 
-                    else await firebase.auth().createUserWithEmailAndPassword(email, pwd); 
-                } catch (e) { 
-                    setError('登入失敗，請檢查帳號密碼'); setLoading(false); 
-                } 
+                e.preventDefault(); if(loading) return; setLoading(true); setError(''); 
+                try { if (mode === 'login') await firebase.auth().signInWithEmailAndPassword(email, pwd); else await firebase.auth().createUserWithEmailAndPassword(email, pwd); } catch (e) { setError('登入失敗，請檢查帳號密碼'); setLoading(false); } 
             };
 
             const handleGoogleLogin = async () => {
-                if(loading) return;
-                setLoading(true); setError('');
-                try {
-                    const provider = new firebase.auth.GoogleAuthProvider();
-                    // 開啟彈窗登入
-                    await firebase.auth().signInWithPopup(provider);
-                } catch (e) {
-                    setError('Google 登入失敗: ' + e.message);
-                    setLoading(false);
-                }
+                if(loading) return; setLoading(true); setError('');
+                try { const provider = new firebase.auth.GoogleAuthProvider(); await firebase.auth().signInWithPopup(provider); } catch (e) { setError('Google 登入失敗: ' + e.message); setLoading(false); }
             };
 
             return (
                 <div className="min-h-screen flex items-center justify-center bg-slate-100 p-4">
                     <div className="bg-white p-6 rounded-lg shadow-lg max-w-sm w-full">
                         <h2 className="text-2xl font-bold mb-6 text-center text-slate-800">登入系統</h2>
-                        
-                        {/* Google 登入按鈕 */}
-                        <button onClick={handleGoogleLogin} disabled={loading} className="w-full bg-white border border-gray-300 text-gray-700 py-3 rounded font-bold mb-6 flex items-center justify-center hover:bg-gray-50 shadow-sm transition">
-                            <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-5 h-5 mr-3"/>
-                            使用 Google 帳號登入
-                        </button>
-
-                        <div className="flex items-center mb-6">
-                            <hr className="flex-1 border-gray-300"/>
-                            <span className="px-3 text-xs text-gray-400 font-bold">或使用 Email</span>
-                            <hr className="flex-1 border-gray-300"/>
-                        </div>
-
-                        <div className="flex bg-gray-200 rounded p-1 mb-4">
-                            <button type="button" onClick={()=>setMode('login')} className={`flex-1 py-1 rounded text-sm ${mode==='login'?'bg-white shadow font-bold':''}`}>登入</button>
-                            <button type="button" onClick={()=>setMode('register')} className={`flex-1 py-1 rounded text-sm ${mode==='register'?'bg-white shadow font-bold':''}`}>註冊</button>
-                        </div>
+                        <button onClick={handleGoogleLogin} disabled={loading} className="w-full bg-white border border-gray-300 text-gray-700 py-3 rounded font-bold mb-6 flex items-center justify-center hover:bg-gray-50 shadow-sm transition"><img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-5 h-5 mr-3"/>使用 Google 帳號登入</button>
+                        <div className="flex items-center mb-6"><hr className="flex-1 border-gray-300"/><span className="px-3 text-xs text-gray-400 font-bold">或使用 Email</span><hr className="flex-1 border-gray-300"/></div>
+                        <div className="flex bg-gray-200 rounded p-1 mb-4"><button type="button" onClick={()=>setMode('login')} className={`flex-1 py-1 rounded text-sm ${mode==='login'?'bg-white shadow font-bold':''}`}>登入</button><button type="button" onClick={()=>setMode('register')} className={`flex-1 py-1 rounded text-sm ${mode==='register'?'bg-white shadow font-bold':''}`}>註冊</button></div>
                         <form onSubmit={handleAuth}>
                             <input type="email" placeholder="Email" className="w-full border p-3 rounded mb-3" value={email} onChange={e=>setEmail(e.target.value)} required/>
                             <input type="password" placeholder="密碼" className="w-full border p-3 rounded mb-4" value={pwd} onChange={e=>setPwd(e.target.value)} required/>
@@ -468,8 +388,7 @@
             const [view, setView] = useState('manual'); 
             const [selectedMonth, setSelectedMonth] = useState(moment().format('YYYY-MM'));
             const [expandedDate, setExpandedDate] = useState(null);
-            const chartRef = useRef(null);
-            const chartInstance = useRef(null);
+            
             const [manualDate, setManualDate] = useState(moment().format('YYYY-MM-DD'));
             const [manualIncome, setManualIncome] = useState('');
             const [manualExpense, setManualExpense] = useState('');
@@ -477,8 +396,7 @@
             const [manualCart, setManualCart] = useState({});
 
             const nanyaTrans = useMemo(() => {
-                return transactions.filter(t => t.franchise === '湳雅直營店' && t.type === '直營報表')
-                    .sort((a,b) => b.id - a.id);
+                return transactions.filter(t => t.franchise === '湳雅直營店' && t.type === '直營報表').sort((a,b) => b.id - a.id);
             }, [transactions]);
 
             const monthStats = useMemo(() => {
@@ -501,29 +419,6 @@
                 Object.keys(dailyGroups).forEach(d => { dailyGroups[d].net = dailyGroups[d].rev - (dailyGroups[d].exp + dailyGroups[d].cost); });
                 return { dailyGroups, list: filtered, totalRev };
             }, [nanyaTrans, selectedMonth]);
-
-            useEffect(() => {
-                if (view === 'history' && chartRef.current) {
-                    if (chartInstance.current) chartInstance.current.destroy();
-                    const ctx = chartRef.current.getContext('2d');
-                    
-                    const labels = Object.keys(monthStats.dailyGroups).sort(); 
-                    const dataRev = labels.map(d => monthStats.dailyGroups[d].rev);
-                    const dataExpTotal = labels.map(d => monthStats.dailyGroups[d].exp + monthStats.dailyGroups[d].cost);
-
-                    chartInstance.current = new Chart(ctx, {
-                        type: 'bar', 
-                        data: {
-                            labels: labels.map(d => d.substring(5)), 
-                            datasets: [
-                                { type: 'bar', label: '當日營收', data: dataRev, backgroundColor: '#22c55e', order: 2, datalabels: { anchor: 'end', align: 'top', font: { size: 10, weight: 'bold' }, formatter: (val) => val > 0 ? val : '' } }, 
-                                { type: 'line', label: '總成本(含食材)', data: dataExpTotal, borderColor: '#ef4444', backgroundColor: '#ef4444', borderWidth: 2, fill: false, tension: 0.1, order: 1, datalabels: { align: 'bottom', color: '#b91c1c', font: { size: 9 }, formatter: (val) => val > 0 ? val : '' } }
-                            ]
-                        },
-                        options: { responsive: true, maintainAspectRatio: false, plugins: { title: { display: true, text: `${selectedMonth} 每日營收 vs 成本` }, legend: { position: 'bottom' }, datalabels: { display: true } }, scales: { y: { beginAtZero: true } } }
-                    });
-                }
-            }, [view, monthStats]);
 
             const handleManualCartChange = (id, val) => {
                 const newQty = parseFloat(val);
@@ -571,11 +466,54 @@
 
             const toggleExpand = (date) => setExpandedDate(expandedDate === date ? null : date);
 
+            const renderCalendar = () => {
+                const startOfMonth = moment(selectedMonth).startOf('month');
+                const daysInMonth = startOfMonth.daysInMonth();
+                const firstDayOfWeek = startOfMonth.day(); 
+
+                const blanks = Array.from({ length: firstDayOfWeek }).map((_, i) => <div key={`blank-${i}`} className="bg-gray-50 h-16 md:h-24"></div>);
+                
+                const days = Array.from({ length: daysInMonth }).map((_, i) => {
+                    const d = i + 1;
+                    const dateStr = `${selectedMonth}-${d.toString().padStart(2, '0')}`;
+                    const stat = monthStats.dailyGroups[dateStr];
+                    const isExpanded = expandedDate === dateStr;
+                    
+                    return (
+                        <div key={d} onClick={() => stat ? toggleExpand(dateStr) : null} className={`relative flex flex-col h-16 md:h-24 ${stat ? 'cursor-pointer hover:bg-blue-50 bg-white' : 'bg-gray-50'} ${isExpanded ? 'ring-2 ring-blue-400 z-10 shadow-lg' : ''}`}>
+                            <div className="absolute top-1 left-1 md:top-2 md:left-2 text-[10px] md:text-xs text-gray-500 font-bold">{d}</div>
+                            <div className="flex-1 flex flex-col items-center justify-center pt-3 md:pt-4">
+                                {stat ? (
+                                    <>
+                                        <div className={`text-sm md:text-2xl font-bold leading-none ${stat.rev > 0 ? 'text-green-600' : 'text-gray-400'}`}>
+                                            {stat.rev > 0 ? stat.rev.toLocaleString() : '-'}
+                                        </div>
+                                        <div className="text-[8px] md:text-[10px] text-gray-400 mt-1 md:mt-2">({stat.items.length}筆)</div>
+                                    </>
+                                ) : null}
+                            </div>
+                        </div>
+                    );
+                });
+
+                return (
+                    <div className="bg-white p-2 shadow rounded border border-gray-200">
+                        <div className="grid grid-cols-7 gap-px bg-gray-200 rounded overflow-hidden">
+                            {['日', '一', '二', '三', '四', '五', '六'].map(d => (
+                                <div key={d} className="bg-gray-100 text-center text-xs md:text-sm font-bold py-1.5 text-gray-600">{d}</div>
+                            ))}
+                            {blanks}
+                            {days}
+                        </div>
+                    </div>
+                );
+            };
+
             return (
                 <div className="space-y-4">
                     <div className="flex bg-gray-200 p-1 rounded">
                         <button onClick={()=>setView('manual')} className={`flex-1 py-2 rounded text-sm font-bold ${view==='manual'?'bg-white shadow text-purple-600':''}`}>手動輸入</button>
-                        <button onClick={()=>setView('history')} className={`flex-1 py-2 rounded text-sm font-bold ${view==='history'?'bg-white shadow text-green-600':''}`}>當月營運圖表</button>
+                        <button onClick={()=>setView('history')} className={`flex-1 py-2 rounded text-sm font-bold ${view==='history'?'bg-white shadow text-green-600':''}`}>當月營運日曆</button>
                     </div>
                     {view === 'manual' && (
                         <div className={`bg-white p-4 shadow rounded space-y-4 animate-fade-in ${isReadonly ? 'readonly-mode' : ''}`}>
@@ -606,17 +544,25 @@
                         </div>
                     )}
                     {view === 'history' && (
-                        <div className="space-y-4">
-                            <div className="bg-white p-4 shadow rounded flex items-center justify-between"><span className="font-bold">月份選擇</span><input type="month" value={selectedMonth} onChange={e=>setSelectedMonth(e.target.value)} className="border p-2 rounded"/></div>
-                            <div className="bg-white p-2 shadow rounded h-80">
-                                <div className="text-center font-bold text-gray-700 mb-2 text-sm bg-gray-50 p-1 rounded">當月總營收: ${monthStats.totalRev.toLocaleString()}</div>
-                                <canvas ref={chartRef}></canvas>
+                        <div className="space-y-4 animate-fade-in">
+                            <div className="bg-white p-2 md:p-4 shadow rounded flex items-center justify-between">
+                                <span className="font-bold text-gray-700">月份選擇</span>
+                                <input type="month" value={selectedMonth} onChange={e=>setSelectedMonth(e.target.value)} className="border p-2 rounded font-bold text-gray-700"/>
                             </div>
+                            
+                            <div className="text-center font-bold text-gray-700 text-sm md:text-base bg-white p-3 md:p-4 rounded shadow-sm border flex flex-col md:flex-row justify-center items-center gap-2 md:gap-4">
+                                <span>當月總營收: <span className="text-blue-600 text-lg md:text-xl">${monthStats.totalRev.toLocaleString()}</span></span>
+                                <span className="hidden md:inline text-gray-300">|</span> 
+                                <span>平均業績 (共{Object.keys(monthStats.dailyGroups).length}天): <span className="text-green-600 text-lg md:text-xl">${Object.keys(monthStats.dailyGroups).length > 0 ? Math.round(monthStats.totalRev / Object.keys(monthStats.dailyGroups).length).toLocaleString() : 0}</span></span>
+                            </div>
+
+                            {renderCalendar()}
+
                             <div className="bg-white shadow rounded overflow-hidden">
-                                <div className="bg-gray-100 p-2 font-bold text-xs text-gray-500">歷史紀錄 (本月倒序)</div>
-                                <div className="max-h-80 overflow-y-auto p-2">
+                                <div className="bg-gray-100 p-2 font-bold text-xs text-gray-500">歷史紀錄清單 (本月倒序)</div>
+                                <div className="max-h-80 overflow-y-auto p-2 custom-scrollbar">
                                     {Object.entries(monthStats.dailyGroups).sort((a,b) => b[0].localeCompare(a[0])).map(([date, group]) => (
-                                        <div key={date} className="border rounded mb-2 overflow-hidden shadow-sm">
+                                        <div key={date} className={`border rounded mb-2 overflow-hidden shadow-sm transition-all ${expandedDate === date ? 'border-blue-400 ring-1 ring-blue-400' : ''}`}>
                                              <div className="bg-gray-50 hover:bg-gray-100 p-3 flex justify-between items-center cursor-pointer select-none" onClick={()=>toggleExpand(date)}>
                                                  <div className="flex items-center space-x-2">
                                                      <i className={`fa-solid ${expandedDate === date ? 'fa-chevron-down' : 'fa-chevron-right'} text-gray-400 text-xs w-4`}></i>
@@ -624,7 +570,7 @@
                                                      <span className="text-xs bg-gray-200 text-gray-600 px-1.5 rounded-full">{group.items.length}筆</span>
                                                  </div>
                                                  <div className="text-right">
-                                                     <span className={`font-mono font-bold block ${group.net >= 0 ? 'text-blue-600' : 'text-red-600'}`}>${group.net.toLocaleString()}</span>
+                                                     <span className={`font-mono font-bold block text-sm ${group.net >= 0 ? 'text-blue-600' : 'text-red-600'}`}>${group.net.toLocaleString()}</span>
                                                      <span className="text-[10px] text-gray-400 block">支:${group.exp.toLocaleString()}</span>
                                                  </div>
                                              </div>
@@ -655,8 +601,11 @@
             );
         };
 
-        const OrderTab = ({ items, inventory, onSubmit, onUpdateInv, franchises, genReceipt, role }) => {
+        const OrderTab = ({ items, inventory, onSubmit, onUpdateTrans, transactions, onUpdateInv, franchises, genReceipt, role }) => {
             const isReadonly = role === ROLES.VIEWER;
+            const [subView, setSubView] = useState('order'); // 'order' or 'ar'
+            
+            // 出貨狀態
             const [cart, setCart] = useState({}); 
             const [franchiseName, setFranchiseName] = useState(''); 
             const [orderDate, setOrderDate] = useState(moment().format('YYYY-MM-DD')); 
@@ -666,6 +615,16 @@
             const [extraItems, setExtraItems] = useState([]);
             const [tempItemName, setTempItemName] = useState('');
             const [tempItemAmount, setTempItemAmount] = useState('');
+
+            // AR 狀態
+            const [arTarget, setArTarget] = useState('');
+            const [arItem, setArItem] = useState('');
+            const [arAmount, setArAmount] = useState('');
+            const [arDate, setArDate] = useState(moment().format('YYYY-MM-DD'));
+            
+            const [payInputId, setPayInputId] = useState(null);
+            const [payAmount, setPayAmount] = useState('');
+            const [payDate, setPayDate] = useState(moment().format('YYYY-MM-DD'));
 
             const handleQtyChange = (id, val) => { const newQty = parseInt(val) || 0; setCart(prev => { if (newQty <= 0) { const { [id]: _, ...rest } = prev; return rest; } return { ...prev, [id]: newQty }; }); };
             
@@ -718,71 +677,223 @@
                 const title = isTransfer ? `【調撥單】_${franchiseName}` : `【訂貨單】_${franchiseName}`;
                 const detailsText = genReceipt(title, moment(orderDate).format('YYYY/MM/DD'), itemDetails, items.reduce((map, i) => ({...map, [i.id]: i}), {}), extraItems, finalShipping);
                 
-                const record = { id: Date.now(), date: moment(orderDate).format('YYYY/MM/DD'), time: moment().format('A h:mm'), type: isTransfer ? '調撥' : '出貨', franchise: franchiseName, content: detailsText.trim(), rawItems: itemDetails, shipping: finalShipping, otherFee: extrasTotal, income: totalAmount, cost: productCost + finalShipping, profit: totalAmount - (productCost + finalShipping), total: totalAmount }; 
+                const record = { 
+                    id: Date.now(), date: moment(orderDate).format('YYYY/MM/DD'), time: moment().format('A h:mm'), 
+                    type: isTransfer ? '調撥' : '出貨', franchise: franchiseName, content: detailsText.trim(), 
+                    rawItems: itemDetails, shipping: finalShipping, otherFee: extrasTotal, 
+                    income: totalAmount, cost: productCost + finalShipping, profit: totalAmount - (productCost + finalShipping), 
+                    total: totalAmount,
+                    payments: [] // 新增 payments 陣列用作應收款追蹤
+                }; 
                 onSubmit(record); 
                 alert(isTransfer ? '調撥單已建立' : '出貨單已建立'); 
                 setCart({}); setFranchiseName(''); setExtraItems([]); setIsTransfer(false); setShippingFee(0); setIsShippingManual(false);
             };
 
+            // ---- 應收帳款邏輯 ----
+            const arList = useMemo(() => {
+                return transactions
+                    .filter(t => ((t.type === '出貨' && t.total > 0) || t.type === '應收帳款'))
+                    .map(t => {
+                        const paid = (t.payments || []).reduce((sum, p) => sum + p.amount, 0);
+                        const remain = t.total - paid;
+                        const days = moment().diff(moment(t.date, 'YYYY/MM/DD'), 'days');
+                        return { ...t, paid, remain, days };
+                    })
+                    .sort((a, b) => {
+                        const aUnpaid = a.remain !== 0;
+                        const bUnpaid = b.remain !== 0;
+                        if (aUnpaid && !bUnpaid) return -1;
+                        if (!aUnpaid && bUnpaid) return 1;
+                        return b.id - a.id;
+                    });
+            }, [transactions]);
+
+            const handleAddAr = () => {
+                if (isReadonly) return;
+                if (!arTarget || !arItem || !arAmount) return alert('請填寫完整資訊');
+                
+                const record = {
+                    id: Date.now(), date: moment(arDate).format('YYYY/MM/DD'), time: moment().format('A h:mm'),
+                    type: '應收帳款', franchise: arTarget, content: arItem,
+                    total: Number(arAmount), income: Number(arAmount), cost: 0, profit: Number(arAmount),
+                    payments: [], shipping: 0, rawItems: []
+                };
+                onSubmit(record);
+                alert('已新增手動應收帳款');
+                setArTarget(''); setArItem(''); setArAmount('');
+            };
+
+            const handleFullPay = (t) => {
+                if (isReadonly) return;
+                if (!confirm(`確定將 ${t.franchise} 的剩餘欠款 $${t.remain.toLocaleString()} 設為已結清？`)) return;
+                const newPayment = { date: moment().format('YYYY-MM-DD'), amount: t.remain };
+                onUpdateTrans(t.id, { payments: [...(t.payments || []), newPayment] });
+                alert('已全數結清！');
+            };
+
+            const confirmPartialPay = (t) => {
+                if (isReadonly) return;
+                const amt = Number(payAmount);
+                if (!amt || amt === 0) return alert('請輸入有效金額');
+                if (amt > t.remain && t.remain > 0) return alert('還款金額不能大於剩餘欠款'); 
+                const newPayment = { date: payDate, amount: amt };
+                onUpdateTrans(t.id, { payments: [...(t.payments || []), newPayment] });
+                setPayInputId(null);
+                alert('已記錄收回款項！');
+            };
+
             return (
                 <div className="space-y-4">
                     <datalist id="franchise-list-order">{franchises.filter(f => f !== '湳雅直營店').map(f=><option key={f} value={f}/>)}</datalist>
-                    <div className={`bg-white p-4 rounded-lg shadow border ${isReadonly ? 'readonly-mode' : ''}`}>
-                        <div className="flex justify-between items-center mb-4 border-b pb-2">
-                             <div className="font-bold text-gray-700">出貨 / 調撥資訊</div>
-                             <label className={`flex items-center space-x-2 px-3 py-1 rounded cursor-pointer select-none border ${isTransfer ? 'bg-orange-100 border-orange-500 text-orange-700' : 'bg-gray-100 text-gray-500'}`}>
-                                 <input type="checkbox" checked={isTransfer} onChange={e=>setIsTransfer(e.target.checked)} className="form-checkbox"/>
-                                 <span className="font-bold text-sm">調撥 (不計營收)</span>
-                             </label>
-                        </div>
-                        <div className="grid grid-cols-2 gap-4 mb-4">
-                            <div><label className="block text-sm text-gray-700">日期</label><input type="date" value={orderDate} onChange={e=>setOrderDate(e.target.value)} className="w-full border rounded p-2"/></div>
-                            <div><label className="block text-sm text-gray-700">對象</label><input type="text" list="franchise-list-order" value={franchiseName} onChange={e=>setFranchiseName(e.target.value)} className="w-full border rounded p-2" placeholder="請輸入或選擇"/></div>
-                        </div>
-                        <div className="bg-blue-50 p-3 rounded border border-blue-100 mb-2">
-                            <div className="flex justify-between items-center mb-1">
-                                <label className="text-xs font-bold text-blue-700">運費設定 (預設 $120/箱)</label>
-                                {isShippingManual && <button onClick={resetShipping} className="text-xs text-gray-500 underline">重置自動計算</button>}
+                    
+                    <div className="flex bg-gray-200 p-1 rounded">
+                        <button onClick={()=>setSubView('order')} className={`flex-1 py-2 rounded text-sm font-bold ${subView==='order'?'bg-white shadow text-blue-600':''}`}>新增出貨/調撥</button>
+                        <button onClick={()=>setSubView('ar')} className={`flex-1 py-2 rounded text-sm font-bold ${subView==='ar'?'bg-white shadow text-indigo-600':''}`}>應收貨款追蹤</button>
+                    </div>
+
+                    {subView === 'order' && (
+                        <div className="animate-fade-in space-y-4">
+                            <div className={`bg-white p-4 rounded-lg shadow border ${isReadonly ? 'readonly-mode' : ''}`}>
+                                <div className="flex justify-between items-center mb-4 border-b pb-2">
+                                     <div className="font-bold text-gray-700">出貨 / 調撥資訊</div>
+                                     <label className={`flex items-center space-x-2 px-3 py-1 rounded cursor-pointer select-none border ${isTransfer ? 'bg-orange-100 border-orange-500 text-orange-700' : 'bg-gray-100 text-gray-500'}`}>
+                                         <input type="checkbox" checked={isTransfer} onChange={e=>setIsTransfer(e.target.checked)} className="form-checkbox"/>
+                                         <span className="font-bold text-sm">調撥 (不計營收)</span>
+                                     </label>
+                                </div>
+                                <div className="grid grid-cols-2 gap-4 mb-4">
+                                    <div><label className="block text-sm text-gray-700">日期</label><input type="date" value={orderDate} onChange={e=>setOrderDate(e.target.value)} className="w-full border rounded p-2"/></div>
+                                    <div><label className="block text-sm text-gray-700">對象</label><input type="text" list="franchise-list-order" value={franchiseName} onChange={e=>setFranchiseName(e.target.value)} className="w-full border rounded p-2" placeholder="請輸入或選擇"/></div>
+                                </div>
+                                <div className="bg-blue-50 p-3 rounded border border-blue-100 mb-2">
+                                    <div className="flex justify-between items-center mb-1">
+                                        <label className="text-xs font-bold text-blue-700">運費設定 (預設 $120/箱)</label>
+                                        {isShippingManual && <button onClick={resetShipping} className="text-xs text-gray-500 underline">重置自動計算</button>}
+                                    </div>
+                                    <input type="number" value={shippingFee} onChange={handleShippingChange} className={`w-full border p-2 rounded ${isShippingManual ? 'bg-yellow-50 font-bold border-yellow-300' : 'bg-white'}`} placeholder="輸入運費"/>
+                                </div>
+                                <div className="bg-gray-50 p-3 rounded border">
+                                    <div className="flex gap-2 mb-2">
+                                        <input type="text" placeholder="項目名稱" value={tempItemName} onChange={e=>setTempItemName(e.target.value)} className="border p-2 flex-1 rounded text-sm"/>
+                                        <input type="number" placeholder="$" value={tempItemAmount} onChange={e=>setTempItemAmount(e.target.value)} className="border p-2 w-20 rounded text-sm"/>
+                                        <button onClick={addExtraItem} className="bg-blue-500 text-white px-3 rounded font-bold text-sm">+</button>
+                                    </div>
+                                    <div className="space-y-1">
+                                        {extraItems.map(item => (
+                                            <div key={item.id} className="flex justify-between text-sm bg-white p-1 px-2 border rounded">
+                                                <span>{item.name}</span>
+                                                <span className="flex items-center gap-2">${item.amount} <i className="fa-solid fa-times text-red-400 cursor-pointer" onClick={()=>removeExtraItem(item.id)}></i></span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
                             </div>
-                            <input type="number" value={shippingFee} onChange={handleShippingChange} className={`w-full border p-2 rounded ${isShippingManual ? 'bg-yellow-50 font-bold border-yellow-300' : 'bg-white'}`} placeholder="輸入運費"/>
-                        </div>
-                        <div className="bg-gray-50 p-3 rounded border">
-                            <div className="flex gap-2 mb-2">
-                                <input type="text" placeholder="項目名稱" value={tempItemName} onChange={e=>setTempItemName(e.target.value)} className="border p-2 flex-1 rounded text-sm"/>
-                                <input type="number" placeholder="$" value={tempItemAmount} onChange={e=>setTempItemAmount(e.target.value)} className="border p-2 w-20 rounded text-sm"/>
-                                <button onClick={addExtraItem} className="bg-blue-500 text-white px-3 rounded font-bold text-sm">+</button>
-                            </div>
-                            <div className="space-y-1">
-                                {extraItems.map(item => (
-                                    <div key={item.id} className="flex justify-between text-sm bg-white p-1 px-2 border rounded">
-                                        <span>{item.name}</span>
-                                        <span className="flex items-center gap-2">${item.amount} <i className="fa-solid fa-times text-red-400 cursor-pointer" onClick={()=>removeExtraItem(item.id)}></i></span>
+
+                            <div className={`grid grid-cols-2 gap-3 ${isReadonly ? 'readonly-mode' : ''}`}>
+                                {items.map(item=>(
+                                    <div key={item.id} className={`bg-white p-3 shadow-sm border flex justify-between ${isTransfer ? 'border-orange-200':''}`}>
+                                        <div><div className="font-bold">{item.name}</div><div className="text-xs text-gray-500">${item.price}</div></div>
+                                        <div className="flex items-center space-x-2">
+                                            <button onClick={()=>handleQtyChange(item.id, (cart[item.id]||0)-1)} className="w-8 border">-</button>
+                                            <input type="number" value={cart[item.id]||''} onChange={e=>handleQtyChange(item.id, e.target.value)} className="w-10 text-center border"/>
+                                            <button onClick={()=>handleQtyChange(item.id, (cart[item.id]||0)+1)} className="w-8 border">+</button>
+                                        </div>
+                                        <div className={`text-[10px] mt-1 text-right ${inventory[item.id] < 1 ? 'text-red-500' : 'text-gray-500'}`}>存: {item.isBox ? formatBoxQty(inventory[item.id]) : (inventory[item.id] || 0)}</div>
                                     </div>
                                 ))}
                             </div>
-                        </div>
-                    </div>
-
-                    <div className={`grid grid-cols-2 gap-3 ${isReadonly ? 'readonly-mode' : ''}`}>
-                        {items.map(item=>(
-                            <div key={item.id} className={`bg-white p-3 shadow-sm border flex justify-between ${isTransfer ? 'border-orange-200':''}`}>
-                                <div><div className="font-bold">{item.name}</div><div className="text-xs text-gray-500">${item.price}</div></div>
-                                <div className="flex items-center space-x-2">
-                                    <button onClick={()=>handleQtyChange(item.id, (cart[item.id]||0)-1)} className="w-8 border">-</button>
-                                    <input type="number" value={cart[item.id]||''} onChange={e=>handleQtyChange(item.id, e.target.value)} className="w-10 text-center border"/>
-                                    <button onClick={()=>handleQtyChange(item.id, (cart[item.id]||0)+1)} className="w-8 border">+</button>
+                            <div className="sticky bottom-4 bg-slate-800 text-white p-4 rounded-lg flex justify-between shadow-xl">
+                                <div className="font-bold">總計: ${isTransfer ? (prepareOrderData().itemDetails.reduce((a,b)=>a+(items.find(i=>i.id===b.id).cost*b.qty),0) + Number(shippingFee)).toLocaleString() : (prepareOrderData().productTotal + extraItems.reduce((a,b)=>a+b.amount,0) + Number(shippingFee)).toLocaleString()}</div>
+                                <div className="space-x-3 flex">
+                                    <button onClick={copyToClipboard} className="bg-green-600 px-3 py-2 rounded text-sm flex items-center"><i className="fa-regular fa-copy mr-1"></i> 複製</button>
+                                    {!isReadonly && <button onClick={handleSubmit} className={`${isTransfer?'bg-orange-500':'bg-blue-500'} px-4 py-2 rounded font-bold text-sm`}>{isTransfer ? '確認調撥' : '確認出貨'}</button>}
                                 </div>
-                                <div className={`text-[10px] mt-1 text-right ${inventory[item.id] < 1 ? 'text-red-500' : 'text-gray-500'}`}>存: {item.isBox ? formatBoxQty(inventory[item.id]) : (inventory[item.id] || 0)}</div>
                             </div>
-                        ))}
-                    </div>
-                    <div className="sticky bottom-4 bg-slate-800 text-white p-4 rounded-lg flex justify-between">
-                        <div className="font-bold">總計: ${isTransfer ? (prepareOrderData().itemDetails.reduce((a,b)=>a+(items.find(i=>i.id===b.id).cost*b.qty),0) + Number(shippingFee)).toLocaleString() : (prepareOrderData().productTotal + extraItems.reduce((a,b)=>a+b.amount,0) + Number(shippingFee)).toLocaleString()}</div>
-                        <div className="space-x-3 flex">
-                            <button onClick={copyToClipboard} className="bg-green-600 px-3 py-2 rounded text-sm flex items-center"><i className="fa-regular fa-copy mr-1"></i> 複製</button>
-                            {!isReadonly && <button onClick={handleSubmit} className={`${isTransfer?'bg-orange-500':'bg-blue-500'} px-4 py-2 rounded font-bold text-sm`}>{isTransfer ? '確認調撥' : '確認出貨'}</button>}
                         </div>
-                    </div>
+                    )}
+
+                    {subView === 'ar' && (
+                        <div className="animate-fade-in space-y-4">
+                            <div className={`bg-white p-4 rounded-lg shadow border border-indigo-100 ${isReadonly ? 'readonly-mode' : ''}`}>
+                                <h3 className="font-bold text-indigo-800 mb-3 border-b pb-2">手動輸入應收帳款</h3>
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+                                    <div><label className="text-xs text-gray-500 font-bold block mb-1">日期</label><input type="date" value={arDate} onChange={e=>setArDate(e.target.value)} className="w-full border p-2 rounded text-sm"/></div>
+                                    <div><label className="text-xs text-gray-500 font-bold block mb-1">應收帳款人</label><input type="text" list="franchise-list-order" value={arTarget} onChange={e=>setArTarget(e.target.value)} placeholder="如: 加盟店A" className="w-full border p-2 rounded text-sm"/></div>
+                                    <div><label className="text-xs text-gray-500 font-bold block mb-1">項目</label><input type="text" value={arItem} onChange={e=>setArItem(e.target.value)} placeholder="如: 貨款、運費" className="w-full border p-2 rounded text-sm"/></div>
+                                    <div><label className="text-xs text-gray-500 font-bold block mb-1">款項 (可負數)</label><input type="number" value={arAmount} onChange={e=>setArAmount(e.target.value)} placeholder="$" className="w-full border p-2 rounded text-sm font-bold"/></div>
+                                </div>
+                                {!isReadonly && <button onClick={handleAddAr} className="w-full bg-indigo-600 hover:bg-indigo-700 transition text-white font-bold py-2.5 rounded shadow">新增應收款</button>}
+                            </div>
+
+                            <div className="bg-white rounded-lg shadow overflow-hidden border">
+                                <div className="bg-gray-100 p-3 font-bold text-gray-700 flex justify-between items-center border-b">
+                                    <span>未結清與歷史應收列表</span>
+                                    <span className="text-xs font-bold bg-indigo-100 text-indigo-800 px-3 py-1 rounded-full border border-indigo-200">總未收: ${arList.filter(t=>t.remain!==0).reduce((s,t)=>s+t.remain,0).toLocaleString()}</span>
+                                </div>
+                                <div className="divide-y max-h-[60vh] overflow-y-auto">
+                                    {arList.map(t => (
+                                        <div key={t.id} className={`p-4 ${t.remain === 0 ? 'bg-gray-50 opacity-70' : 'bg-white hover:bg-slate-50'}`}>
+                                            <div className="flex justify-between items-start mb-2">
+                                                <div className="font-bold text-sm md:text-base flex items-center flex-wrap gap-2">
+                                                    <span className={`px-2 py-0.5 rounded text-white text-[10px] md:text-xs ${t.type === '出貨' ? 'bg-blue-500' : 'bg-purple-500'}`}>{t.type}</span>
+                                                    <span>{t.franchise}</span>
+                                                    <span className="text-gray-400 text-xs font-normal">({t.date})</span>
+                                                    {t.remain !== 0 && <span className="text-red-600 text-xs font-bold bg-red-100 border border-red-200 px-1.5 py-0.5 rounded-full">{t.days}天未清</span>}
+                                                </div>
+                                                <div className="text-right">
+                                                    <span className="text-sm font-bold text-gray-700">總額: ${t.total.toLocaleString()}</span>
+                                                </div>
+                                            </div>
+                                            <div className="text-xs text-gray-500 mb-3 line-clamp-2 md:line-clamp-none" title={t.content}>
+                                                {t.type === '出貨' ? '系統出貨單 (見報表區)' : t.content}
+                                            </div>
+                                            
+                                            <div className="flex flex-col md:flex-row md:justify-between md:items-end border-t pt-3 gap-3">
+                                                <div className="flex md:flex-col gap-4 md:gap-0 justify-between items-center md:items-start">
+                                                    <div className="text-xs font-bold text-green-600">已收: ${t.paid.toLocaleString()}</div>
+                                                    <div className={`text-sm font-bold ${t.remain === 0 ? 'text-gray-400' : 'text-red-600'}`}>欠款: ${t.remain.toLocaleString()}</div>
+                                                </div>
+                                                
+                                                {t.remain !== 0 && !isReadonly && (
+                                                    <div className="flex gap-2 w-full md:w-auto mt-2 md:mt-0">
+                                                        {payInputId === t.id ? (
+                                                            <div className="flex items-center gap-2 bg-yellow-50 p-2 rounded border border-yellow-200 w-full justify-between shadow-inner">
+                                                                <input type="date" value={payDate} onChange={e=>setPayDate(e.target.value)} className="border p-1 w-24 text-xs rounded"/>
+                                                                <input type="number" value={payAmount} onChange={e=>setPayAmount(e.target.value)} placeholder="金額" className="border p-1 w-20 text-xs rounded"/>
+                                                                <div className="space-x-1 flex">
+                                                                    <button onClick={() => confirmPartialPay(t)} className="bg-green-500 text-white px-3 py-1 rounded text-xs font-bold shadow-sm">確認</button>
+                                                                    <button onClick={() => setPayInputId(null)} className="bg-gray-400 text-white px-3 py-1 rounded text-xs font-bold shadow-sm">取消</button>
+                                                                </div>
+                                                            </div>
+                                                        ) : (
+                                                            <>
+                                                                <button onClick={() => { setPayInputId(t.id); setPayAmount(t.remain); setPayDate(moment().format('YYYY-MM-DD')); }} className="flex-1 md:flex-none bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded text-xs font-bold hover:bg-indigo-200 transition">按次輸入已收</button>
+                                                                <button onClick={() => handleFullPay(t)} className="flex-1 md:flex-none bg-green-500 text-white px-4 py-1.5 rounded text-xs font-bold hover:bg-green-600 transition shadow">一次全清</button>
+                                                            </>
+                                                        )}
+                                                    </div>
+                                                )}
+                                                {t.remain === 0 && <span className="text-xs text-gray-400 font-bold bg-gray-100 px-3 py-1 rounded-full"><i className="fa-solid fa-check"></i> 已結清</span>}
+                                            </div>
+                                            
+                                            {t.payments && t.payments.length > 0 && (
+                                                <div className="mt-3 bg-gray-50 border p-2 rounded text-[10px] text-gray-600 flex flex-wrap gap-2 items-center">
+                                                    <span className="font-bold text-gray-700"><i className="fa-solid fa-clock-rotate-left mr-1"></i>收款紀錄: </span>
+                                                    {t.payments.map((p, i) => (
+                                                        <span key={i} className="bg-white border px-1.5 py-0.5 rounded shadow-sm">
+                                                            {p.date} <span className="font-bold text-green-600">(${p.amount.toLocaleString()})</span>
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
+                                    {arList.length === 0 && <div className="p-8 text-center text-gray-400 text-sm"><i className="fa-regular fa-folder-open text-2xl block mb-2"></i>尚無應收款項紀錄</div>}
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             );
         };
@@ -925,7 +1036,6 @@
             const [newTrackerExpName, setNewTrackerExpName] = useState(''); 
             const [newTrackerExpAmount, setNewTrackerExpAmount] = useState('');
 
-            // ... (keep Franchise logic identical, apply readonly where needed)
             useEffect(() => { setStarterPack(settings.starterPack); if(payType === 'install_chailease') { setTotalRevenue(settings.constants.chaileaseBase); } else { setTotalRevenue(''); } }, [settings, payType]);
             const chaileaseTax = payType === 'install_chailease' ? (settings.constants.chaileaseBase * 0.05) : 0;
             const chaileaseFee = payType === 'install_chailease' ? settings.constants.chaileaseFee : 0;
@@ -1007,9 +1117,8 @@
 
         const ReportTab = ({ transactions, onDelete, items, role }) => {
             const isReadonly = role === ROLES.VIEWER;
-            // 新增這兩個狀態來控制畫面呈現與報告分類
-            const [viewMode, setViewMode] = useState('dashboard'); // 'dashboard' | 'monthly'
-            const [reportCategory, setReportCategory] = useState('all'); // 'all', 'shipment', 'direct', 'franchise'
+            const [viewMode, setViewMode] = useState('dashboard');
+            const [reportCategory, setReportCategory] = useState('all');
 
             const [start, setStart] = useState(moment().startOf('month').format('YYYY-MM-DD'));
             const [end, setEnd] = useState(moment().endOf('month').format('YYYY-MM-DD'));
@@ -1043,105 +1152,49 @@
 
             const companyNetProfit = (stats.shipmentRev + stats.franchiseRev + stats.directStoreSales) - (stats.shipmentCost + stats.franchiseCost + stats.transferCost + stats.expenses + stats.directStoreExp + stats.directStoreCost);
             
-            // 新增：月結報表資料處理
             const monthlyData = useMemo(() => {
                 const grouped = {};
-                const totals = {
-                    shipment: { rev: 0, cost: 0, profit: 0 },
-                    direct: { rev: 0, cost: 0, profit: 0 },
-                    franchise: { rev: 0, cost: 0, profit: 0 }
-                };
+                const totals = { shipment: { rev: 0, cost: 0, profit: 0 }, direct: { rev: 0, cost: 0, profit: 0 }, franchise: { rev: 0, cost: 0, profit: 0 } };
 
                 allTransInRange.forEach(t => {
                     const month = moment(t.date).format('YYYY-MM');
-                    if (!grouped[month]) {
-                        grouped[month] = {
-                            shipment: { rev: 0, cost: 0, profit: 0, items: [] },
-                            direct: { rev: 0, cost: 0, profit: 0, items: [] },
-                            franchise: { rev: 0, cost: 0, profit: 0, items: [] }
-                        };
-                    }
+                    if (!grouped[month]) { grouped[month] = { shipment: { rev: 0, cost: 0, profit: 0, items: [] }, direct: { rev: 0, cost: 0, profit: 0, items: [] }, franchise: { rev: 0, cost: 0, profit: 0, items: [] } }; }
 
                     if (t.type === '出貨') {
-                        grouped[month].shipment.rev += t.income;
-                        grouped[month].shipment.cost += t.cost;
-                        grouped[month].shipment.profit += t.profit;
+                        grouped[month].shipment.rev += t.income; grouped[month].shipment.cost += t.cost; grouped[month].shipment.profit += t.profit;
                         grouped[month].shipment.items.push({ date: t.date, title: t.franchise, rev: t.income, cost: t.cost, profit: t.profit });
-
-                        totals.shipment.rev += t.income;
-                        totals.shipment.cost += t.cost;
-                        totals.shipment.profit += t.profit;
+                        totals.shipment.rev += t.income; totals.shipment.cost += t.cost; totals.shipment.profit += t.profit;
                     } else if (t.type === '直營報表') {
-                        grouped[month].direct.rev += t.income;
-                        const expense = t.rawExpenses || 0;
-                        const cogs = t.cost - expense;
-                        const totalCost = expense + cogs;
-                        
-                        grouped[month].direct.cost += totalCost;
-                        grouped[month].direct.profit += (t.income - totalCost);
+                        grouped[month].direct.rev += t.income; const expense = t.rawExpenses || 0; const cogs = t.cost - expense; const totalCost = expense + cogs;
+                        grouped[month].direct.cost += totalCost; grouped[month].direct.profit += (t.income - totalCost);
                         grouped[month].direct.items.push({ date: t.date, title: '湳雅直營店', rev: t.income, cost: totalCost, profit: (t.income - totalCost) });
-
-                        totals.direct.rev += t.income;
-                        totals.direct.cost += totalCost;
-                        totals.direct.profit += (t.income - totalCost);
+                        totals.direct.rev += t.income; totals.direct.cost += totalCost; totals.direct.profit += (t.income - totalCost);
                     } else if (t.type === '加盟') {
-                        grouped[month].franchise.rev += t.income;
-                        grouped[month].franchise.cost += t.cost;
-                        grouped[month].franchise.profit += t.profit;
+                        grouped[month].franchise.rev += t.income; grouped[month].franchise.cost += t.cost; grouped[month].franchise.profit += t.profit;
                         grouped[month].franchise.items.push({ date: t.date, title: t.franchise, rev: t.income, cost: t.cost, profit: t.profit });
-
-                        totals.franchise.rev += t.income;
-                        totals.franchise.cost += t.cost;
-                        totals.franchise.profit += t.profit;
+                        totals.franchise.rev += t.income; totals.franchise.cost += t.cost; totals.franchise.profit += t.profit;
                     }
                 });
 
-                return {
-                    months: Object.keys(grouped).sort((a,b) => b.localeCompare(a)), // 降序排列
-                    grouped,
-                    totals
-                };
+                return { months: Object.keys(grouped).sort((a,b) => b.localeCompare(a)), grouped, totals };
             }, [allTransInRange]);
 
             const getGrandTotal = () => {
                 let rev = 0, cost = 0, profit = 0;
-                if (reportCategory === 'all' || reportCategory === 'shipment') {
-                    rev += monthlyData.totals.shipment.rev; cost += monthlyData.totals.shipment.cost; profit += monthlyData.totals.shipment.profit;
-                }
-                if (reportCategory === 'all' || reportCategory === 'direct') {
-                    rev += monthlyData.totals.direct.rev; cost += monthlyData.totals.direct.cost; profit += monthlyData.totals.direct.profit;
-                }
-                if (reportCategory === 'all' || reportCategory === 'franchise') {
-                    rev += monthlyData.totals.franchise.rev; cost += monthlyData.totals.franchise.cost; profit += monthlyData.totals.franchise.profit;
-                }
+                if (reportCategory === 'all' || reportCategory === 'shipment') { rev += monthlyData.totals.shipment.rev; cost += monthlyData.totals.shipment.cost; profit += monthlyData.totals.shipment.profit; }
+                if (reportCategory === 'all' || reportCategory === 'direct') { rev += monthlyData.totals.direct.rev; cost += monthlyData.totals.direct.cost; profit += monthlyData.totals.direct.profit; }
+                if (reportCategory === 'all' || reportCategory === 'franchise') { rev += monthlyData.totals.franchise.rev; cost += monthlyData.totals.franchise.cost; profit += monthlyData.totals.franchise.profit; }
                 return { rev, cost, profit };
             };
 
-            // 匯出 CSV 函式
             const exportToCSV = () => {
-                // 加入 BOM，讓 Excel 開啟時不會中文亂碼
                 let csvContent = "\uFEFF月份,日期,類型,對象,營收(收入),成本(支出),淨利\n";
-                
                 monthlyData.months.forEach(month => {
                     const mData = monthlyData.grouped[month];
-                    
-                    if (reportCategory === 'all' || reportCategory === 'shipment') {
-                        mData.shipment.items.forEach(it => {
-                            csvContent += `${month},${it.date},出貨,${it.title || '-'},${it.rev},${it.cost},${it.profit}\n`;
-                        });
-                    }
-                    if (reportCategory === 'all' || reportCategory === 'direct') {
-                        mData.direct.items.forEach(it => {
-                            csvContent += `${month},${it.date},直營,${it.title},${it.rev},${it.cost},${it.profit}\n`;
-                        });
-                    }
-                    if (reportCategory === 'all' || reportCategory === 'franchise') {
-                        mData.franchise.items.forEach(it => {
-                            csvContent += `${month},${it.date},加盟,${it.title || '-'},${it.rev},${it.cost},${it.profit}\n`;
-                        });
-                    }
+                    if (reportCategory === 'all' || reportCategory === 'shipment') { mData.shipment.items.forEach(it => { csvContent += `${month},${it.date},出貨,${it.title || '-'},${it.rev},${it.cost},${it.profit}\n`; }); }
+                    if (reportCategory === 'all' || reportCategory === 'direct') { mData.direct.items.forEach(it => { csvContent += `${month},${it.date},直營,${it.title},${it.rev},${it.cost},${it.profit}\n`; }); }
+                    if (reportCategory === 'all' || reportCategory === 'franchise') { mData.franchise.items.forEach(it => { csvContent += `${month},${it.date},加盟,${it.title || '-'},${it.rev},${it.cost},${it.profit}\n`; }); }
                 });
-
                 const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
                 const link = document.createElement("a");
                 const url = URL.createObjectURL(blob);
@@ -1218,7 +1271,7 @@
                                         <div key={t.id} className="border rounded p-3 text-sm relative hover:bg-gray-50">
                                             <div className="flex justify-between font-bold mb-1">
                                                 <span className="flex items-center gap-2">
-                                                    <span className={`px-2 py-0.5 rounded text-white text-xs ${t.type==='出貨'?'bg-blue-500':t.type==='直營報表'?'bg-cyan-500':t.type==='加盟'?'bg-indigo-500':t.type==='進貨/支出'?'bg-red-500':'bg-gray-500'}`}>{t.type}</span>
+                                                    <span className={`px-2 py-0.5 rounded text-white text-xs ${t.type==='出貨'?'bg-blue-500':t.type==='直營報表'?'bg-cyan-500':t.type==='加盟'?'bg-indigo-500':t.type==='進貨/支出'?'bg-red-500':t.type==='應收帳款'?'bg-purple-500':'bg-gray-500'}`}>{t.type}</span>
                                                     <span>{t.date}</span>
                                                     <span className="text-gray-600">- {t.franchise}</span>
                                                     {t.createdBy && <span className="text-[10px] text-gray-400 ml-2">({t.createdBy.split('@')[0]})</span>}
@@ -1249,7 +1302,6 @@
                                 </div>
                             </div>
 
-                            {/* 總結算區塊 */}
                             <div className="bg-slate-50 p-4 rounded-lg border mb-6">
                                 <div className="flex justify-between items-center mb-4">
                                     <h4 className="font-bold text-slate-700">區間總結算明細 ({start} ~ {end})</h4>
@@ -1281,7 +1333,6 @@
                                     )}
                                 </div>
 
-                                {/* 單一過濾的加總儀表板 */}
                                 {(() => {
                                     const grand = getGrandTotal();
                                     return (
@@ -1302,7 +1353,6 @@
                                 })()}
                             </div>
 
-                            {/* 每月明細 */}
                             <div className="space-y-4">
                                 <h4 className="font-bold text-gray-700">每月分組明細</h4>
                                 {monthlyData.months.map(month => (
