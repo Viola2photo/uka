@@ -237,7 +237,7 @@
 
             const addTransaction = (record) => {
                 if (!user || !db) return;
-                const actionType = record.type === '直營報表' ? 'direct' : 'general';
+                const actionType = (record.type === '直營報表') ? 'direct' : 'general';
                 if (!checkWritePermission(actionType)) return;
                 record.createdBy = user.email;
                 db.collection('company_data').doc('main_system').collection('transactions').doc(String(record.id)).set(record);
@@ -578,12 +578,30 @@
             const [shippingFee, setShippingFee] = useState(0);
             const [isShippingManual, setIsShippingManual] = useState(false);
             const [extraItems, setExtraItems] = useState([]);
-            const [tempItemName, setTempItemName] = useState('');
-            const [tempItemAmount, setTempItemAmount] = useState('');
             const [paymentInputs, setPaymentInputs] = useState({});
+            
+            // Manual Receivable States
+            const [manualName, setManualName] = useState('');
+            const [manualItem, setManualItem] = useState('');
+            const [manualAmount, setManualAmount] = useState('');
 
             const receivableTrans = useMemo(() => {
-                return transactions.filter(t => t.type === '出貨').sort((a,b) => b.id - a.id);
+                // Filter both shipment and manual receivable types
+                const list = transactions.filter(t => t.type === '出貨' || t.type === '應收帳款');
+                
+                // Sorting logic: Unpaid first, then by ID descending
+                return list.sort((a, b) => {
+                    const balanceA = (a.total || 0) - (a.paidAmount || 0);
+                    const balanceB = (b.total || 0) - (b.paidAmount || 0);
+                    
+                    const isUnpaidA = balanceA !== 0;
+                    const isUnpaidB = balanceB !== 0;
+
+                    if (isUnpaidA && !isUnpaidB) return -1;
+                    if (!isUnpaidA && isUnpaidB) return 1;
+                    
+                    return b.id - a.id;
+                });
             }, [transactions]);
 
             useEffect(() => {
@@ -645,6 +663,29 @@
                 setCart({}); setFranchiseName(''); setExtraItems([]); setIsTransfer(false); setShippingFee(0);
             };
 
+            const handleManualReceivableSubmit = () => {
+                if (isReadonly) return;
+                if (!manualName || !manualItem || manualAmount === '') return alert('請完整填寫款項資訊');
+                
+                const amount = parseFloat(manualAmount);
+                const record = {
+                    id: Date.now(),
+                    date: moment().format('YYYY/MM/DD'),
+                    time: moment().format('A h:mm'),
+                    type: '應收帳款',
+                    franchise: manualName,
+                    content: `【手動補帳】${manualItem}`,
+                    income: amount,
+                    paidAmount: 0,
+                    cost: 0,
+                    profit: amount,
+                    total: amount
+                };
+                onSubmit(record);
+                alert('帳款已手動輸入');
+                setManualName(''); setManualItem(''); setManualAmount('');
+            };
+
             const handlePaymentUpdate = (id, total, currentPaid, isClearAll = false) => {
                 if (isReadonly) return;
                 let amountToAdd = 0;
@@ -654,13 +695,12 @@
                     amountToAdd = parseFloat(paymentInputs[id]) || 0;
                 }
                 
-                if (amountToAdd <= 0) return;
+                if (amountToAdd === 0) return;
                 const newPaid = currentPaid + amountToAdd;
-                if (newPaid > total) return alert('收款金額不可超過總金額');
 
                 onUpdateTrans(id, { paidAmount: newPaid });
                 setPaymentInputs({ ...paymentInputs, [id]: '' });
-                if (isClearAll) alert('已全額清帳');
+                if (isClearAll) alert('已完成餘額結清');
             };
 
             return (
@@ -684,39 +724,65 @@
                     )}
 
                     {view === 'receivable' && (
-                        <div className="animate-fade-in space-y-3">
-                            {receivableTrans.map(t => {
-                                const balance = t.total - (t.paidAmount || 0);
-                                const daysAgo = moment().diff(moment(t.date, 'YYYY/MM/DD'), 'days');
-                                const isFullyPaid = balance <= 0;
-                                return (
-                                    <div key={t.id} className={`bg-white p-4 shadow-sm border rounded-lg relative ${isFullyPaid ? 'opacity-60 grayscale-[50%]' : 'border-l-4 border-l-orange-500'}`}>
-                                        <div className="flex justify-between items-start mb-2">
-                                            <div>
-                                                <div className="font-bold text-gray-800">{t.franchise} <span className="text-[10px] font-normal text-gray-400">#{t.id}</span></div>
-                                                <div className="text-xs text-gray-500">{t.date} <span className="ml-2 bg-slate-100 px-1 rounded">已過 {daysAgo} 天</span></div>
-                                            </div>
-                                            <div className="text-right">
-                                                <div className="font-bold text-blue-600">${t.total.toLocaleString()}</div>
-                                                {isFullyPaid ? <span className="text-[10px] bg-green-500 text-white px-1.5 py-0.5 rounded-full font-bold">已結清</span> : <span className="text-[10px] bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded-full font-bold italic">尚欠 ${balance.toLocaleString()}</span>}
-                                            </div>
-                                        </div>
-                                        
-                                        {!isFullyPaid && !isReadonly && (
-                                            <div className="mt-3 pt-3 border-t flex flex-wrap gap-2 items-center">
-                                                <div className="flex-1 flex items-center bg-gray-50 rounded border px-2">
-                                                    <span className="text-xs text-gray-400 mr-2">累計收款: ${t.paidAmount || 0} /</span>
-                                                    <input type="number" value={paymentInputs[t.id] || ''} onChange={e=>setPaymentInputs({...paymentInputs, [t.id]: e.target.value})} className="bg-transparent text-sm w-full py-1 outline-none font-bold" placeholder="輸入本次回收金額"/>
-                                                </div>
-                                                <button onClick={()=>handlePaymentUpdate(t.id, t.total, t.paidAmount || 0)} className="bg-orange-500 text-white px-3 py-1.5 rounded text-xs font-bold shadow-sm">回收</button>
-                                                <button onClick={()=>handlePaymentUpdate(t.id, t.total, t.paidAmount || 0, true)} className="bg-slate-700 text-white px-3 py-1.5 rounded text-xs font-bold shadow-sm">全清</button>
-                                            </div>
-                                        )}
-                                        {isFullyPaid && <div className="text-xs text-green-600 font-bold mt-2"><i className="fa-solid fa-circle-check mr-1"></i>此筆貨款已於系統結清</div>}
+                        <div className="animate-fade-in space-y-4">
+                            {/* Manual Input Section */}
+                            <div className={`bg-white p-4 rounded-lg shadow-md border-t-4 border-orange-400 ${isReadonly ? 'readonly-mode' : ''}`}>
+                                <h3 className="font-bold text-gray-700 mb-3 flex items-center"><i className="fa-solid fa-plus-circle mr-2 text-orange-500"></i>輸入應收帳款 (補帳)</h3>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+                                    <div>
+                                        <label className="text-[10px] font-bold text-gray-400">款項人</label>
+                                        <input type="text" list="franchise-list-order" value={manualName} onChange={e=>setManualName(e.target.value)} className="w-full border rounded p-2 text-sm" placeholder="如: 某某店名"/>
                                     </div>
-                                );
-                            })}
-                            {receivableTrans.length === 0 && <div className="text-center py-20 text-gray-400">目前尚無出貨紀錄</div>}
+                                    <div>
+                                        <label className="text-[10px] font-bold text-gray-400">項目說明</label>
+                                        <input type="text" value={manualItem} onChange={e=>setManualItem(e.target.value)} className="w-full border rounded p-2 text-sm" placeholder="如: 欠款補齊、退貨扣除"/>
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] font-bold text-gray-400">金額 (可輸入負數)</label>
+                                        <input type="number" value={manualAmount} onChange={e=>setManualAmount(e.target.value)} className="w-full border rounded p-2 text-sm font-bold text-blue-700" placeholder="0"/>
+                                    </div>
+                                </div>
+                                <button onClick={handleManualReceivableSubmit} className="w-full bg-slate-700 text-white py-2 rounded text-sm font-bold hover:bg-slate-800 transition">建立補帳項目</button>
+                            </div>
+
+                            {/* Receivable List */}
+                            <div className="space-y-3">
+                                {receivableTrans.map(t => {
+                                    const balance = t.total - (t.paidAmount || 0);
+                                    const daysAgo = moment().diff(moment(t.date, 'YYYY/MM/DD'), 'days');
+                                    const isFullyPaid = Math.abs(balance) < 0.1; // Float point safe check
+                                    
+                                    return (
+                                        <div key={t.id} className={`bg-white p-4 shadow-sm border rounded-lg relative transition-all ${isFullyPaid ? 'opacity-50 grayscale-[50%]' : 'border-l-4 border-l-orange-500 shadow-md transform hover:scale-[1.01]'}`}>
+                                            {!isFullyPaid && <div className="absolute top-2 right-2 flex space-x-1 animate-pulse"><div className="w-2 h-2 bg-orange-400 rounded-full"></div></div>}
+                                            <div className="flex justify-between items-start mb-2">
+                                                <div>
+                                                    <div className="font-bold text-gray-800 text-base">{t.franchise} <span className="text-[10px] font-normal text-gray-400 ml-1">#{t.id}</span></div>
+                                                    <div className="text-xs text-gray-500 mt-0.5">{t.date} <span className="ml-2 bg-slate-100 px-1.5 py-0.5 rounded text-[10px]">{t.type}</span> <span className="ml-1 bg-blue-50 text-blue-600 px-1 rounded">帳齡 {daysAgo} 天</span></div>
+                                                </div>
+                                                <div className="text-right">
+                                                    <div className="font-bold text-blue-600 text-base">${t.total.toLocaleString()}</div>
+                                                    {isFullyPaid ? <span className="text-[10px] bg-green-500 text-white px-2 py-0.5 rounded-full font-bold">已結清</span> : <span className="text-[10px] bg-red-100 text-red-600 px-2 py-0.5 rounded-full font-bold italic shadow-sm">尚欠 ${balance.toLocaleString()}</span>}
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="text-[11px] text-gray-400 bg-gray-50 p-1.5 rounded border border-gray-100 mb-2 truncate italic">{t.content.split('\n')[0]}</div>
+
+                                            {!isFullyPaid && !isReadonly && (
+                                                <div className="mt-3 pt-3 border-t flex flex-wrap gap-2 items-center">
+                                                    <div className="flex-1 flex items-center bg-gray-50 rounded border px-2">
+                                                        <span className="text-[10px] text-gray-400 mr-2">累計已收: ${t.paidAmount || 0} / </span>
+                                                        <input type="number" value={paymentInputs[t.id] || ''} onChange={e=>setPaymentInputs({...paymentInputs, [t.id]: e.target.value})} className="bg-transparent text-sm w-full py-1 outline-none font-bold" placeholder="輸入本次收回"/>
+                                                    </div>
+                                                    <button onClick={()=>handlePaymentUpdate(t.id, t.total, t.paidAmount || 0)} className="bg-orange-500 text-white px-4 py-1.5 rounded text-xs font-bold shadow-sm active:scale-95 transition">回收</button>
+                                                    <button onClick={()=>handlePaymentUpdate(t.id, t.total, t.paidAmount || 0, true)} className="bg-slate-800 text-white px-4 py-1.5 rounded text-xs font-bold shadow-sm active:scale-95 transition">全清</button>
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                                {receivableTrans.length === 0 && <div className="text-center py-20 text-gray-400 italic">目前無帳務資料</div>}
+                            </div>
                         </div>
                     )}
                 </div>
