@@ -32,7 +32,6 @@
         .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-        /* 針對 View 模式禁用點擊的樣式 */
         .readonly-mode { pointer-events: none; opacity: 0.7; filter: grayscale(20%); }
     </style>
 </head>
@@ -60,11 +59,10 @@
             try { firebase.initializeApp(firebaseConfig); } catch (e) { console.error("Firebase Init Error:", e); }
         }
 
-        // --- 權限管理設定 ---
         const ROLES = {
-            ADMIN: 'admin',       // 管理員：全部權限
-            OPERATOR: 'operator', // 操作員：僅直營頁面
-            VIEWER: 'viewer'      // 檢視員：僅檢視，無法修改
+            ADMIN: 'admin',
+            OPERATOR: 'operator',
+            VIEWER: 'viewer'
         };
 
         const checkUserRole = (email) => {
@@ -73,7 +71,6 @@
             if (email.toLowerCase() === 'aa0980115055@gmail.com') return ROLES.VIEWER;
             return ROLES.ADMIN;
         };
-        // ------------------
 
         const formatBoxQty = (val) => {
             if (val === undefined || val === null) return '0';
@@ -197,15 +194,10 @@
                         setLoading(true);
                         const userRole = checkUserRole(u.email);
                         setRole(userRole);
-                        
                         if (userRole === ROLES.OPERATOR) setActiveTab('direct');
-
                         const sharedRef = firebase.firestore().collection('company_data').doc('main_system');
-                        
                         const unsubTrans = sharedRef.collection('transactions').orderBy('id', 'desc').onSnapshot(snap => {
-                            const list = [];
-                            snap.forEach(doc => list.push(doc.data()));
-                            setTransactions(list);
+                            const list = []; snap.forEach(doc => list.push(doc.data())); setTransactions(list);
                         });
                         const unsubInv = sharedRef.collection('data').doc('inventory').onSnapshot(doc => {
                             if (doc.exists) setInventory(doc.data());
@@ -232,14 +224,8 @@
             }, []);
 
             const checkWritePermission = (actionType = 'general') => {
-                if (role === ROLES.VIEWER) {
-                    alert('權限不足：您目前的帳號僅有「檢視」權限。');
-                    return false;
-                }
-                if (role === ROLES.OPERATOR && actionType !== 'direct') {
-                    alert('權限不足：您的帳號僅能操作「直營」相關功能。');
-                    return false;
-                }
+                if (role === ROLES.VIEWER) { alert('權限不足：您目前的帳號僅有「檢視」權限。'); return false; }
+                if (role === ROLES.OPERATOR && actionType !== 'direct') { alert('權限不足：您的帳號僅能操作「直營」相關功能。'); return false; }
                 return true;
             };
 
@@ -247,18 +233,14 @@
                 if (!user || !db) return;
                 if (!checkWritePermission()) return;
                 const invRef = db.collection('company_data').doc('main_system').collection('data').doc('inventory');
-                if (isSet) {
-                     invRef.update({ [id]: change }).catch(() => invRef.set({ [id]: change }, { merge: true }));
-                } else {
-                     invRef.update({ [id]: firebase.firestore.FieldValue.increment(change) }).catch(() => invRef.set({ [id]: change }, { merge: true }));
-                }
+                if (isSet) invRef.update({ [id]: change }).catch(() => invRef.set({ [id]: change }, { merge: true }));
+                else invRef.update({ [id]: firebase.firestore.FieldValue.increment(change) }).catch(() => invRef.set({ [id]: change }, { merge: true }));
             };
 
             const addTransaction = (record) => {
                 if (!user || !db) return;
                 const actionType = record.type === '直營報表' ? 'direct' : 'general';
                 if (!checkWritePermission(actionType)) return;
-                
                 record.createdBy = user.email;
                 db.collection('company_data').doc('main_system').collection('transactions').doc(String(record.id)).set(record);
             };
@@ -273,35 +255,25 @@
                 if (!user || !db) return;
                 const actionType = type === '直營報表' ? 'direct' : 'general';
                 if (!checkWritePermission(actionType)) return;
-
                 if (!confirm('確定要刪除此筆資料嗎？\n注意：這將會復原相關的庫存變動。')) return;
                 setLoading(true);
                 try {
                     const txRef = db.collection('company_data').doc('main_system').collection('transactions').doc(String(id));
                     const doc = await txRef.get();
                     if (!doc.exists) throw new Error('找不到該筆資料');
-                    
                     const tx = doc.data();
                     const batch = db.batch();
                     const invRef = db.collection('company_data').doc('main_system').collection('data').doc('inventory');
                     const invUpdates = {};
-
                     if ((tx.type === '出貨' || tx.type === '調撥' || tx.type === '直營報表') && tx.rawItems) {
                         tx.rawItems.forEach(item => { if (item.id) invUpdates[item.id] = firebase.firestore.FieldValue.increment(item.qty); });
                     } else if (tx.type === '進貨/支出' && tx.rawItems) {
-                        tx.rawItems.forEach(item => { 
-                             if (item.id) invUpdates[item.id] = firebase.firestore.FieldValue.increment(-item.qty); 
-                        });
+                        tx.rawItems.forEach(item => { if (item.id) invUpdates[item.id] = firebase.firestore.FieldValue.increment(-item.qty); });
                     } else if (tx.type === '庫存校正' && tx.rawItems) {
-                        tx.rawItems.forEach(item => {
-                            if (item.id) invUpdates[item.id] = firebase.firestore.FieldValue.increment(-item.change);
-                        });
+                        tx.rawItems.forEach(item => { if (item.id) invUpdates[item.id] = firebase.firestore.FieldValue.increment(-item.change); });
                     } else if (tx.type === '加盟' && tx.franchiseData && tx.franchiseData.starterPack) {
-                        tx.franchiseData.starterPack.forEach(item => {
-                            if(item.id !== 'equip_set') invUpdates[item.id] = firebase.firestore.FieldValue.increment(item.qty);
-                        });
+                        tx.franchiseData.starterPack.forEach(item => { if(item.id !== 'equip_set') invUpdates[item.id] = firebase.firestore.FieldValue.increment(item.qty); });
                     }
-
                     if (Object.keys(invUpdates).length > 0) batch.update(invRef, invUpdates);
                     batch.delete(txRef);
                     await batch.commit();
@@ -310,11 +282,9 @@
             };
 
             const saveSettings = (newSettings) => {
-                if (!user || !db) return;
-                if (!checkWritePermission()) return;
+                if (!user || !db) return; if (!checkWritePermission()) return;
                 db.collection('company_data').doc('main_system').collection('data').doc('settings').set(newSettings)
-                    .then(() => alert('設定已儲存！'))
-                    .catch(err => alert('儲存失敗: ' + err.message));
+                    .then(() => alert('設定已儲存！')).catch(err => alert('儲存失敗: ' + err.message));
             };
 
             const uniqueFranchises = useMemo(() => {
@@ -365,13 +335,7 @@
                             ))}
                         </div>
                     </div>
-                    
-                    {role === ROLES.VIEWER && (
-                        <div className="bg-yellow-100 text-yellow-800 p-2 text-center text-xs font-bold shadow-inner">
-                            目前為「純檢視模式」，無法新增或修改任何資料。
-                        </div>
-                    )}
-
+                    {role === ROLES.VIEWER && <div className="bg-yellow-100 text-yellow-800 p-2 text-center text-xs font-bold shadow-inner">目前為「純檢視模式」，無法新增或修改任何資料。</div>}
                     <div className="p-4 mb-20 flex-1 overflow-y-auto">
                         {(loading || !appSettings) && <div className="text-center py-10 text-gray-500"><i className="fa-solid fa-spinner fa-spin mr-2"></i>資料讀取中...</div>}
                         {!loading && appSettings && (
@@ -390,59 +354,16 @@
         };
 
         const LoginScreen = () => {
-            const [email, setEmail] = useState(''); 
-            const [pwd, setPwd] = useState(''); 
-            const [mode, setMode] = useState('login'); 
-            const [error, setError] = useState(''); 
-            const [loading, setLoading] = useState(false);
-            
-            const handleAuth = async (e) => { 
-                e.preventDefault(); 
-                if(loading) return; 
-                setLoading(true); setError(''); 
-                try { 
-                    if (mode === 'login') await firebase.auth().signInWithEmailAndPassword(email, pwd); 
-                    else await firebase.auth().createUserWithEmailAndPassword(email, pwd); 
-                } catch (e) { 
-                    setError('登入失敗，請檢查帳號密碼'); setLoading(false); 
-                } 
-            };
-
-            const handleGoogleLogin = async () => {
-                if(loading) return;
-                setLoading(true); setError('');
-                try {
-                    const provider = new firebase.auth.GoogleAuthProvider();
-                    await firebase.auth().signInWithPopup(provider);
-                } catch (e) {
-                    setError('Google 登入失敗: ' + e.message);
-                    setLoading(false);
-                }
-            };
-
+            const [email, setEmail] = useState(''); const [pwd, setPwd] = useState(''); const [mode, setMode] = useState('login'); const [error, setError] = useState(''); const [loading, setLoading] = useState(false);
+            const handleAuth = async (e) => { e.preventDefault(); if(loading) return; setLoading(true); setError(''); try { if (mode === 'login') await firebase.auth().signInWithEmailAndPassword(email, pwd); else await firebase.auth().createUserWithEmailAndPassword(email, pwd); } catch (e) { setError('登入失敗，請檢查帳號密碼'); setLoading(false); } };
+            const handleGoogleLogin = async () => { if(loading) return; setLoading(true); setError(''); try { const provider = new firebase.auth.GoogleAuthProvider(); await firebase.auth().signInWithPopup(provider); } catch (e) { setError('Google 登入失敗: ' + e.message); setLoading(false); } };
             return (
                 <div className="min-h-screen flex items-center justify-center bg-slate-100 p-4">
                     <div className="bg-white p-6 rounded-lg shadow-lg max-w-sm w-full">
                         <h2 className="text-2xl font-bold mb-6 text-center text-slate-800">登入系統</h2>
-                        <button onClick={handleGoogleLogin} disabled={loading} className="w-full bg-white border border-gray-300 text-gray-700 py-3 rounded font-bold mb-6 flex items-center justify-center hover:bg-gray-50 shadow-sm transition">
-                            <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-5 h-5 mr-3"/>
-                            使用 Google 帳號登入
-                        </button>
-                        <div className="flex items-center mb-6">
-                            <hr className="flex-1 border-gray-300"/>
-                            <span className="px-3 text-xs text-gray-400 font-bold">或使用 Email</span>
-                            <hr className="flex-1 border-gray-300"/>
-                        </div>
-                        <div className="flex bg-gray-200 rounded p-1 mb-4">
-                            <button type="button" onClick={()=>setMode('login')} className={`flex-1 py-1 rounded text-sm ${mode==='login'?'bg-white shadow font-bold':''}`}>登入</button>
-                            <button type="button" onClick={()=>setMode('register')} className={`flex-1 py-1 rounded text-sm ${mode==='register'?'bg-white shadow font-bold':''}`}>註冊</button>
-                        </div>
-                        <form onSubmit={handleAuth}>
-                            <input type="email" placeholder="Email" className="w-full border p-3 rounded mb-3" value={email} onChange={e=>setEmail(e.target.value)} required/>
-                            <input type="password" placeholder="密碼" className="w-full border p-3 rounded mb-4" value={pwd} onChange={e=>setPwd(e.target.value)} required/>
-                            {error && <div className="text-red-500 text-xs mb-4">{error}</div>}
-                            <button type="submit" disabled={loading} className="w-full bg-indigo-600 text-white py-3 rounded font-bold mb-4">{loading?'處理中...':(mode==='login'?'確認 Email 登入':'確認註冊')}</button>
-                        </form>
+                        <button onClick={handleGoogleLogin} disabled={loading} className="w-full bg-white border border-gray-300 text-gray-700 py-3 rounded font-bold mb-6 flex items-center justify-center hover:bg-gray-50 shadow-sm transition"><img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-5 h-5 mr-3"/>使用 Google 帳號登入</button>
+                        <div className="flex bg-gray-200 rounded p-1 mb-4"><button type="button" onClick={()=>setMode('login')} className={`flex-1 py-1 rounded text-sm ${mode==='login'?'bg-white shadow font-bold':''}`}>登入</button><button type="button" onClick={()=>setMode('register')} className={`flex-1 py-1 rounded text-sm ${mode==='register'?'bg-white shadow font-bold':''}`}>註冊</button></div>
+                        <form onSubmit={handleAuth}><input type="email" placeholder="Email" className="w-full border p-3 rounded mb-3" value={email} onChange={e=>setEmail(e.target.value)} required/><input type="password" placeholder="密碼" className="w-full border p-3 rounded mb-4" value={pwd} onChange={e=>setPwd(e.target.value)} required/>{error && <div className="text-red-500 text-xs mb-4">{error}</div>}<button type="submit" disabled={loading} className="w-full bg-indigo-600 text-white py-3 rounded font-bold mb-4">{loading?'處理中...':(mode==='login'?'確認 Email 登入':'確認註冊')}</button></form>
                     </div>
                 </div>
             );
@@ -460,8 +381,7 @@
             const [manualCart, setManualCart] = useState({});
 
             const nanyaTrans = useMemo(() => {
-                return transactions.filter(t => t.franchise === '湳雅直營店' && t.type === '直營報表')
-                    .sort((a,b) => b.id - a.id);
+                return transactions.filter(t => t.franchise === '湳雅直營店' && t.type === '直營報表').sort((a,b) => b.id - a.id);
             }, [transactions]);
 
             const monthStats = useMemo(() => {
@@ -470,7 +390,6 @@
                 const filtered = nanyaTrans.filter(t => moment(t.date).isBetween(start, end, 'day', '[]'));
                 const dailyGroups = {};
                 let totalRev = 0;
-                
                 filtered.forEach(t => {
                     if (!dailyGroups[t.date]) dailyGroups[t.date] = { rev: 0, cost: 0, exp: 0, items: [] };
                     const exp = t.rawExpenses || 0;
@@ -487,7 +406,8 @@
 
             const handleManualCartChange = (id, val) => {
                 const newQty = parseFloat(val);
-                if (isNaN(newQty) || newQty < 0) { const { [id]: _, ...rest } = manualCart; setManualCart(rest); } else { setManualCart({ ...manualCart, [id]: newQty }); }
+                if (isNaN(newQty) || newQty < 0) { const { [id]: _, ...rest } = manualCart; setManualCart(rest); } 
+                else { setManualCart({ ...manualCart, [id]: newQty }); }
             };
 
             const submitManualReport = () => {
@@ -524,34 +444,23 @@
                 });
                 content += `------------------\n淨利：$${profit.toLocaleString()}`;
                 const record = { id: Date.now(), date: pDate, time: moment().format('A h:mm'), type: '直營報表', franchise: '湳雅直營店', content: content, rawItems: pItems.map(i => ({...i, id: i.id, qty: i.qty})), shipping: 0, income: pIncome, rawExpenses: pExpense, expenseDetail: pNote, cost: totalCost, profit: profit, total: pIncome };
-                onSubmit(record);
-                pItems.forEach(item => onUpdateInv(item.id, -item.qty));
-                alert('日報表已建立，庫存已扣除');
+                onSubmit(record); pItems.forEach(item => onUpdateInv(item.id, -item.qty)); alert('日報表已建立，庫存已扣除');
             };
 
             const toggleExpand = (date) => setExpandedDate(expandedDate === date ? null : date);
 
-            // 月曆相關邏輯
             const calendarGrid = useMemo(() => {
                 const startOfMonth = moment(selectedMonth).startOf('month');
                 const endOfMonth = moment(selectedMonth).endOf('month');
                 const daysInMonth = endOfMonth.date();
-                const startDay = startOfMonth.day(); // 0 (Sun) to 6 (Sat)
-                
+                const startDay = startOfMonth.day();
                 const grid = [];
-                // 填充上個月的空位
-                for (let i = 0; i < startDay; i++) {
-                    grid.push({ type: 'empty', key: `empty-${i}` });
-                }
-                // 填充本月的日期
+                for (let i = 0; i < startDay; i++) { grid.push({ type: 'empty', key: `empty-${i}` }); }
                 for (let i = 1; i <= daysInMonth; i++) {
                     const dateStr = startOfMonth.clone().date(i).format('YYYY-MM-DD');
                     const dayOfWeek = startOfMonth.clone().date(i).day();
                     grid.push({ 
-                        type: 'day', 
-                        dayNum: i, 
-                        date: dateStr, 
-                        key: `day-${i}`,
+                        type: 'day', dayNum: i, date: dateStr, key: `day-${i}`,
                         data: monthStats.dailyGroups[dateStr] || null,
                         isToday: dateStr === moment().format('YYYY-MM-DD'),
                         isWeekend: dayOfWeek === 0 || dayOfWeek === 6
@@ -566,7 +475,7 @@
                 <div className="space-y-4">
                     <div className="flex bg-gray-200 p-1 rounded">
                         <button onClick={()=>setView('manual')} className={`flex-1 py-2 rounded text-sm font-bold ${view==='manual'?'bg-white shadow text-purple-600':''}`}>手動輸入</button>
-                        <button onClick={()=>setView('history')} className={`flex-1 py-2 rounded text-sm font-bold ${view==='history'?'bg-white shadow text-green-600':''}`}>當月營運月曆</button>
+                        <button onClick={()=>setView('history')} className={`flex-1 py-2 rounded text-sm font-bold ${view==='history'?'bg-white shadow text-green-600':''}`}>營運日曆</button>
                     </div>
                     {view === 'manual' && (
                         <div className={`bg-white p-4 shadow rounded space-y-4 animate-fade-in ${isReadonly ? 'readonly-mode' : ''}`}>
@@ -585,10 +494,7 @@
                                     {items.map(item => (
                                         <div key={item.id} className="flex justify-between items-center bg-white p-2 rounded border shadow-sm">
                                             <span className="text-sm">{item.name}</span>
-                                            <div className="flex items-center space-x-1">
-                                                <input type="number" value={manualCart[item.id] || ''} onChange={e=>handleManualCartChange(item.id, e.target.value)} className="w-12 border text-center text-sm p-1 rounded" placeholder="0"/>
-                                                <span className="text-xs text-gray-400">{item.isBox ? '包' : item.unit}</span>
-                                            </div>
+                                            <div className="flex items-center space-x-1"><input type="number" value={manualCart[item.id] || ''} onChange={e=>handleManualCartChange(item.id, e.target.value)} className="w-12 border text-center text-sm p-1 rounded" placeholder="0"/><span className="text-xs text-gray-400">{item.isBox ? '包' : item.unit}</span></div>
                                         </div>
                                     ))}
                                 </div>
@@ -602,83 +508,47 @@
                                 <span className="font-bold text-gray-700">月份切換</span>
                                 <input type="month" value={selectedMonth} onChange={e=>setSelectedMonth(e.target.value)} className="border p-2 rounded focus:ring-2 focus:ring-green-500 outline-none"/>
                             </div>
-                            
-                            {/* 營運月曆面板 */}
                             <div className="bg-white p-4 shadow rounded overflow-hidden">
                                 <div className="text-center font-bold text-gray-700 mb-4 bg-gray-50 p-3 rounded-lg flex justify-between items-center px-4 border">
                                     <span className="text-lg">{moment(selectedMonth).format('YYYY年 MM月')}</span>
                                     <span className="text-sm bg-green-100 text-green-700 px-3 py-1 rounded-full shadow-sm">月總收: ${monthStats.totalRev.toLocaleString()}</span>
                                 </div>
-                                
-                                {/* 月曆格線系統 */}
                                 <div className="grid grid-cols-7 border-t border-l border-gray-200">
-                                    {/* 星期標頭 */}
                                     {weekDays.map(day => (
-                                        <div key={day} className={`p-2 text-center text-xs font-bold border-b border-r border-gray-200 bg-slate-100 ${day==='日'||day==='六'?'text-red-500':'text-slate-500'}`}>
-                                            {day}
-                                        </div>
+                                        <div key={day} className={`p-2 text-center text-xs font-bold border-b border-r border-gray-200 bg-slate-100 ${day==='日'||day==='六'?'text-red-500':'text-slate-500'}`}>{day}</div>
                                     ))}
-                                    
-                                    {/* 日期內容 */}
                                     {calendarGrid.map(cell => (
                                         <div key={cell.key} className={`min-h-[75px] md:min-h-[90px] p-1 border-b border-r border-gray-200 flex flex-col items-start transition-colors ${cell.type === 'empty' ? 'bg-gray-50' : cell.isWeekend ? 'bg-orange-50/30' : 'bg-white'} ${cell.isToday ? 'ring-2 ring-blue-500 ring-inset z-10' : ''}`}>
                                             {cell.type === 'day' && (
                                                 <>
-                                                    <span className={`text-[11px] md:text-xs font-bold mb-1 ${cell.isWeekend ? 'text-red-400' : 'text-gray-400'} ${cell.isToday ? 'bg-blue-600 text-white px-1.5 rounded-full' : ''}`}>
-                                                        {cell.dayNum}
-                                                    </span>
+                                                    <span className={`text-[11px] md:text-xs font-bold mb-1 ${cell.isWeekend ? 'text-red-400' : 'text-gray-400'} ${cell.isToday ? 'bg-blue-600 text-white px-1.5 rounded-full' : ''}`}>{cell.dayNum}</span>
                                                     {cell.data && (
                                                         <div className="w-full mt-auto text-right">
-                                                            <div className="text-[10px] md:text-sm font-bold text-green-600 leading-tight break-all">
-                                                                ${cell.data.rev.toLocaleString()}
-                                                            </div>
-                                                            <div className={`text-[9px] hidden md:block ${cell.data.net >= 0 ? 'text-blue-500' : 'text-red-400'}`}>
-                                                                {cell.data.net >= 0 ? '盈' : '虧'} ${Math.abs(cell.data.net).toLocaleString()}
-                                                            </div>
-                                                        </div >
+                                                            <div className="text-[10px] md:text-sm font-bold text-green-600 leading-tight break-all">${cell.data.rev.toLocaleString()}</div>
+                                                            <div className={`text-[9px] hidden md:block ${cell.data.net >= 0 ? 'text-blue-500' : 'text-red-400'}`}>{cell.data.net >= 0 ? '盈' : '虧'} ${Math.abs(cell.data.net).toLocaleString()}</div>
+                                                        </div>
                                                     )}
                                                 </>
                                             )}
                                         </div>
                                     ))}
                                 </div>
-                                <div className="mt-3 text-[10px] text-gray-400 italic flex items-center">
-                                    <i className="fa-solid fa-circle-info mr-1 text-blue-400"></i>
-                                    業績金額以 $x,xxx 格式顯示。點擊下方列表可展開檢視成本與品項。
-                                </div>
                             </div>
-
                             <div className="bg-white shadow rounded overflow-hidden">
-                                <div className="bg-gray-100 p-2 px-4 font-bold text-xs text-gray-500 flex justify-between border-b">
-                                    <span>詳細報表記錄 (由新到舊)</span>
-                                    <span>共 {Object.keys(monthStats.dailyGroups).length} 天有營運資料</span>
-                                </div>
+                                <div className="bg-gray-100 p-2 px-4 font-bold text-xs text-gray-500 flex justify-between border-b"><span>詳細報表記錄</span><span>共 {Object.keys(monthStats.dailyGroups).length} 天資料</span></div>
                                 <div className="max-h-[400px] overflow-y-auto p-2 custom-scrollbar">
                                     {Object.entries(monthStats.dailyGroups).sort((a,b) => b[0].localeCompare(a[0])).map(([date, group]) => (
                                         <div key={date} className="border rounded-lg mb-2 overflow-hidden shadow-sm">
                                              <div className="bg-gray-50 hover:bg-gray-100 p-3 flex justify-between items-center cursor-pointer select-none transition-colors" onClick={()=>toggleExpand(date)}>
-                                                 <div className="flex items-center space-x-2">
-                                                     <i className={`fa-solid ${expandedDate === date ? 'fa-chevron-down' : 'fa-chevron-right'} text-gray-400 text-xs w-4`}></i>
-                                                     <span className="font-bold text-gray-700">{date}</span>
-                                                     <span className="text-[10px] bg-white border border-gray-300 text-gray-500 px-2 py-0.5 rounded-full">{group.items.length} 筆明細</span>
-                                                 </div>
-                                                 <div className="text-right">
-                                                     <span className={`font-mono font-bold block text-sm ${group.net >= 0 ? 'text-blue-600' : 'text-red-600'}`}>${group.net.toLocaleString()} (淨)</span>
-                                                     <span className="text-[10px] text-gray-400 block">營收: ${group.rev.toLocaleString()}</span>
-                                                 </div>
+                                                 <div className="flex items-center space-x-2"><i className={`fa-solid ${expandedDate === date ? 'fa-chevron-down' : 'fa-chevron-right'} text-gray-400 text-xs w-4`}></i><span className="font-bold text-gray-700">{date}</span><span className="text-[10px] bg-white border border-gray-300 text-gray-500 px-2 py-0.5 rounded-full">{group.items.length} 筆</span></div>
+                                                 <div className="text-right"><span className={`font-mono font-bold block text-sm ${group.net >= 0 ? 'text-blue-600' : 'text-red-600'}`}>${group.net.toLocaleString()} (淨)</span><span className="text-[10px] text-gray-400 block">營收: ${group.rev.toLocaleString()}</span></div>
                                              </div>
                                              {expandedDate === date && (
                                                 <div className="bg-white border-t animate-fade-in">
                                                     {group.items.map(t => (
                                                         <div key={t.id} className="flex justify-between items-center p-3 border-b last:border-0 hover:bg-slate-50">
-                                                            <div className="flex-1">
-                                                                <div className="text-xs text-gray-700 font-medium whitespace-pre-wrap">{t.content.split('\n')[2] || t.content}</div> 
-                                                                <div className="text-[10px] text-gray-400 mt-1">{t.time} | 操作人: {t.createdBy?.split('@')[0]}</div>
-                                                            </div>
-                                                            <div className="text-right px-4">
-                                                                <div className="text-green-600 font-bold text-sm">+${t.income.toLocaleString()}</div>
-                                                                <div className="text-red-400 text-[10px]">-${(t.cost - (t.rawExpenses||0)).toLocaleString()} (材)</div>
-                                                            </div>
+                                                            <div className="flex-1"><div className="text-xs text-gray-700 font-medium whitespace-pre-wrap">{t.content.split('\n')[2] || t.content}</div><div className="text-[10px] text-gray-400 mt-1">{t.time} | 操作人: {t.createdBy?.split('@')[0]}</div></div>
+                                                            <div className="text-right px-4"><div className="text-green-600 font-bold text-sm">+${t.income.toLocaleString()}</div><div className="text-red-400 text-[10px]">-${(t.cost - (t.rawExpenses||0)).toLocaleString()} (材)</div></div>
                                                             {!isReadonly && <button onClick={() => onDelete(t.id, t.type)} className="text-gray-300 hover:text-red-500 p-2 transition-colors"><i className="fa-solid fa-trash-can"></i></button>}
                                                         </div>
                                                     ))}
@@ -697,250 +567,49 @@
 
         const OrderTab = ({ items, inventory, onSubmit, onUpdateInv, franchises, genReceipt, role }) => {
             const isReadonly = role === ROLES.VIEWER;
-            const [cart, setCart] = useState({}); 
-            const [franchiseName, setFranchiseName] = useState(''); 
-            const [orderDate, setOrderDate] = useState(moment().format('YYYY-MM-DD')); 
-            const [isTransfer, setIsTransfer] = useState(false); 
-            const [shippingFee, setShippingFee] = useState(0);
-            const [isShippingManual, setIsShippingManual] = useState(false);
-            const [extraItems, setExtraItems] = useState([]);
-            const [tempItemName, setTempItemName] = useState('');
-            const [tempItemAmount, setTempItemAmount] = useState('');
-
+            const [cart, setCart] = useState({}); const [franchiseName, setFranchiseName] = useState(''); const [orderDate, setOrderDate] = useState(moment().format('YYYY-MM-DD')); const [isTransfer, setIsTransfer] = useState(false); const [shippingFee, setShippingFee] = useState(0); const [isShippingManual, setIsShippingManual] = useState(false); const [extraItems, setExtraItems] = useState([]); const [tempItemName, setTempItemName] = useState(''); const [tempItemAmount, setTempItemAmount] = useState('');
             const handleQtyChange = (id, val) => { const newQty = parseInt(val) || 0; setCart(prev => { if (newQty <= 0) { const { [id]: _, ...rest } = prev; return rest; } return { ...prev, [id]: newQty }; }); };
-            
-            useEffect(() => {
-                if (!isShippingManual) {
-                    let boxCount = 0;
-                    items.forEach(item => { if (item.isBox && cart[item.id]) boxCount += cart[item.id]; });
-                    setShippingFee(boxCount * 120);
-                }
-            }, [cart, items, isShippingManual]);
-
+            useEffect(() => { if (!isShippingManual) { let boxCount = 0; items.forEach(item => { if (item.isBox && cart[item.id]) boxCount += cart[item.id]; }); setShippingFee(boxCount * 120); } }, [cart, items, isShippingManual]);
             const handleShippingChange = (e) => { setShippingFee(e.target.value); setIsShippingManual(true); };
             const resetShipping = () => { setIsShippingManual(false); let boxCount = 0; items.forEach(item => { if (item.isBox && cart[item.id]) boxCount += cart[item.id]; }); setShippingFee(boxCount * 120); };
             const addExtraItem = () => { if(!tempItemName || !tempItemAmount) return; setExtraItems([...extraItems, { id: Date.now(), name: tempItemName, amount: Number(tempItemAmount) }]); setTempItemName(''); setTempItemAmount(''); };
             const removeExtraItem = (id) => { setExtraItems(extraItems.filter(i => i.id !== id)); };
-
-            const prepareOrderData = () => {
-                let productTotal = 0; let itemDetails = [];
-                Object.entries(cart).forEach(([id, qty]) => { 
-                    const item = items.find(i => i.id === id); 
-                    if(item) { productTotal += (isTransfer ? 0 : item.price) * qty; itemDetails.push({...item, qty, price: isTransfer ? 0 : item.price}); } 
-                });
-                return { itemDetails, productTotal };
-            };
-
-            const copyToClipboard = () => { 
-                const { itemDetails } = prepareOrderData(); 
-                const title = isTransfer ? `【調撥單】_${franchiseName || '未填寫'}` : `【訂貨單】_${franchiseName || '未填寫'}`;
-                const text = genReceipt(title, moment(orderDate).format('YYYY/MM/DD'), itemDetails, items.reduce((map, i) => ({...map, [i.id]: i}), {}), extraItems, Number(shippingFee));
-                const ta=document.createElement("textarea"); ta.value=text; document.body.appendChild(ta); ta.select(); try{document.execCommand('copy');alert('已複製\n'+text);}catch(e){alert('複製失敗');} document.body.removeChild(ta); 
-            };
-
-            const handleSubmit = () => { 
-                if (isReadonly) return;
-                if (!franchiseName) return alert('請輸入對象(加盟點/單位)'); 
-                if (Object.keys(cart).length === 0) return alert('購物車是空的'); 
-                
-                const { itemDetails, productTotal } = prepareOrderData();
-                const finalShipping = Number(shippingFee);
-                const extrasTotal = extraItems.reduce((a,b) => a + b.amount, 0);
-                const totalAmount = isTransfer ? 0 : (productTotal + extrasTotal + finalShipping);
-                
-                let productCost = 0;
-                itemDetails.forEach(item => { 
-                    const originalItem = items.find(i => i.id === item.id);
-                    productCost += (originalItem ? originalItem.cost : 0) * item.qty; 
-                    onUpdateInv(item.id, -item.qty); 
-                });
-                
-                const title = isTransfer ? `【調撥單】_${franchiseName}` : `【訂貨單】_${franchiseName}`;
-                const detailsText = genReceipt(title, moment(orderDate).format('YYYY/MM/DD'), itemDetails, items.reduce((map, i) => ({...map, [i.id]: i}), {}), extraItems, finalShipping);
-                
-                const record = { id: Date.now(), date: moment(orderDate).format('YYYY/MM/DD'), time: moment().format('A h:mm'), type: isTransfer ? '調撥' : '出貨', franchise: franchiseName, content: detailsText.trim(), rawItems: itemDetails, shipping: finalShipping, otherFee: extrasTotal, income: totalAmount, cost: productCost + finalShipping, profit: totalAmount - (productCost + finalShipping), total: totalAmount }; 
-                onSubmit(record); 
-                alert(isTransfer ? '調撥單已建立' : '出貨單已建立'); 
-                setCart({}); setFranchiseName(''); setExtraItems([]); setIsTransfer(false); setShippingFee(0); setIsShippingManual(false);
-            };
-
+            const prepareOrderData = () => { let productTotal = 0; let itemDetails = []; Object.entries(cart).forEach(([id, qty]) => { const item = items.find(i => i.id === id); if(item) { productTotal += (isTransfer ? 0 : item.price) * qty; itemDetails.push({...item, qty, price: isTransfer ? 0 : item.price}); } }); return { itemDetails, productTotal }; };
+            const copyToClipboard = () => { const { itemDetails } = prepareOrderData(); const title = isTransfer ? `【調撥單】_${franchiseName || '未填寫'}` : `【訂貨單】_${franchiseName || '未填寫'}`; const text = genReceipt(title, moment(orderDate).format('YYYY/MM/DD'), itemDetails, items.reduce((map, i) => ({...map, [i.id]: i}), {}), extraItems, Number(shippingFee)); const ta=document.createElement("textarea"); ta.value=text; document.body.appendChild(ta); ta.select(); try{document.execCommand('copy');alert('已複製\n'+text);}catch(e){alert('複製失敗');} document.body.removeChild(ta); };
+            const handleSubmit = () => { if (isReadonly) return; if (!franchiseName) return alert('請輸入對象(加盟點/單位)'); if (Object.keys(cart).length === 0) return alert('購物車是空的'); const { itemDetails, productTotal } = prepareOrderData(); const finalShipping = Number(shippingFee); const extrasTotal = extraItems.reduce((a,b) => a + b.amount, 0); const totalAmount = isTransfer ? 0 : (productTotal + extrasTotal + finalShipping); let productCost = 0; itemDetails.forEach(item => { const originalItem = items.find(i => i.id === item.id); productCost += (originalItem ? originalItem.cost : 0) * item.qty; onUpdateInv(item.id, -item.qty); }); const title = isTransfer ? `【調撥單】_${franchiseName}` : `【訂貨單】_${franchiseName}`; const detailsText = genReceipt(title, moment(orderDate).format('YYYY/MM/DD'), itemDetails, items.reduce((map, i) => ({...map, [i.id]: i}), {}), extraItems, finalShipping); const record = { id: Date.now(), date: moment(orderDate).format('YYYY/MM/DD'), time: moment().format('A h:mm'), type: isTransfer ? '調撥' : '出貨', franchise: franchiseName, content: detailsText.trim(), rawItems: itemDetails, shipping: finalShipping, otherFee: extrasTotal, income: totalAmount, cost: productCost + finalShipping, profit: totalAmount - (productCost + finalShipping), total: totalAmount }; onSubmit(record); alert(isTransfer ? '調撥單已建立' : '出貨單已建立'); setCart({}); setFranchiseName(''); setExtraItems([]); setIsTransfer(false); setShippingFee(0); setIsShippingManual(false); };
             return (
                 <div className="space-y-4">
                     <datalist id="franchise-list-order">{franchises.filter(f => f !== '湳雅直營店').map(f=><option key={f} value={f}/>)}</datalist>
                     <div className={`bg-white p-4 rounded-lg shadow border ${isReadonly ? 'readonly-mode' : ''}`}>
-                        <div className="flex justify-between items-center mb-4 border-b pb-2">
-                             <div className="font-bold text-gray-700">出貨 / 調撥資訊</div>
-                             <label className={`flex items-center space-x-2 px-3 py-1 rounded cursor-pointer select-none border ${isTransfer ? 'bg-orange-100 border-orange-500 text-orange-700' : 'bg-gray-100 text-gray-500'}`}>
-                                 <input type="checkbox" checked={isTransfer} onChange={e=>setIsTransfer(e.target.checked)} className="form-checkbox"/>
-                                 <span className="font-bold text-sm">調撥 (不計營收)</span>
-                             </label>
-                        </div>
-                        <div className="grid grid-cols-2 gap-4 mb-4">
-                            <div><label className="block text-sm text-gray-700">日期</label><input type="date" value={orderDate} onChange={e=>setOrderDate(e.target.value)} className="w-full border rounded p-2"/></div>
-                            <div><label className="block text-sm text-gray-700">對象</label><input type="text" list="franchise-list-order" value={franchiseName} onChange={e=>setFranchiseName(e.target.value)} className="w-full border rounded p-2" placeholder="請輸入或選擇"/></div>
-                        </div>
-                        <div className="bg-blue-50 p-3 rounded border border-blue-100 mb-2">
-                            <div className="flex justify-between items-center mb-1">
-                                <label className="text-xs font-bold text-blue-700">運費設定 (預設 $120/箱)</label>
-                                {isShippingManual && <button onClick={resetShipping} className="text-xs text-gray-500 underline">重置自動計算</button>}
-                            </div>
-                            <input type="number" value={shippingFee} onChange={handleShippingChange} className={`w-full border p-2 rounded ${isShippingManual ? 'bg-yellow-50 font-bold border-yellow-300' : 'bg-white'}`} placeholder="輸入運費"/>
-                        </div>
-                        <div className="bg-gray-50 p-3 rounded border">
-                            <div className="flex gap-2 mb-2">
-                                <input type="text" placeholder="項目名稱" value={tempItemName} onChange={e=>setTempItemName(e.target.value)} className="border p-2 flex-1 rounded text-sm"/>
-                                <input type="number" placeholder="$" value={tempItemAmount} onChange={e=>setTempItemAmount(e.target.value)} className="border p-2 w-20 rounded text-sm"/>
-                                <button onClick={addExtraItem} className="bg-blue-500 text-white px-3 rounded font-bold text-sm">+</button>
-                            </div>
-                            <div className="space-y-1">
-                                {extraItems.map(item => (
-                                    <div key={item.id} className="flex justify-between text-sm bg-white p-1 px-2 border rounded">
-                                        <span>{item.name}</span>
-                                        <span className="flex items-center gap-2">${item.amount} <i className="fa-solid fa-times text-red-400 cursor-pointer" onClick={()=>removeExtraItem(item.id)}></i></span>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
+                        <div className="flex justify-between items-center mb-4 border-b pb-2"><div className="font-bold text-gray-700">出貨 / 調撥資訊</div><label className={`flex items-center space-x-2 px-3 py-1 rounded cursor-pointer select-none border ${isTransfer ? 'bg-orange-100 border-orange-500 text-orange-700' : 'bg-gray-100 text-gray-500'}`}><input type="checkbox" checked={isTransfer} onChange={e=>setIsTransfer(e.target.checked)} className="form-checkbox"/><span className="font-bold text-sm">調撥 (不計營收)</span></label></div>
+                        <div className="grid grid-cols-2 gap-4 mb-4"><div><label className="block text-sm text-gray-700">日期</label><input type="date" value={orderDate} onChange={e=>setOrderDate(e.target.value)} className="w-full border rounded p-2"/></div><div><label className="block text-sm text-gray-700">對象</label><input type="text" list="franchise-list-order" value={franchiseName} onChange={e=>setFranchiseName(e.target.value)} className="w-full border rounded p-2" placeholder="請輸入或選擇"/></div></div>
+                        <div className="bg-blue-50 p-3 rounded border border-blue-100 mb-2"><div className="flex justify-between items-center mb-1"><label className="text-xs font-bold text-blue-700">運費設定 (預設 $120/箱)</label>{isShippingManual && <button onClick={resetShipping} className="text-xs text-gray-500 underline">重置自動計算</button>}</div><input type="number" value={shippingFee} onChange={handleShippingChange} className={`w-full border p-2 rounded ${isShippingManual ? 'bg-yellow-50 font-bold border-yellow-300' : 'bg-white'}`} placeholder="輸入運費"/></div>
+                        <div className="bg-gray-50 p-3 rounded border"><div className="flex gap-2 mb-2"><input type="text" placeholder="項目名稱" value={tempItemName} onChange={e=>setTempItemName(e.target.value)} className="border p-2 flex-1 rounded text-sm"/><input type="number" placeholder="$" value={tempItemAmount} onChange={e=>setTempItemAmount(e.target.value)} className="border p-2 w-20 rounded text-sm"/><button onClick={addExtraItem} className="bg-blue-500 text-white px-3 rounded font-bold text-sm">+</button></div><div className="space-y-1">{extraItems.map(item => (<div key={item.id} className="flex justify-between text-sm bg-white p-1 px-2 border rounded"><span>{item.name}</span><span className="flex items-center gap-2">${item.amount} <i className="fa-solid fa-times text-red-400 cursor-pointer" onClick={()=>removeExtraItem(item.id)}></i></span></div>))}</div></div>
                     </div>
-
-                    <div className={`grid grid-cols-2 gap-3 ${isReadonly ? 'readonly-mode' : ''}`}>
-                        {items.map(item=>(
-                            <div key={item.id} className={`bg-white p-3 shadow-sm border flex justify-between ${isTransfer ? 'border-orange-200':''}`}>
-                                <div><div className="font-bold">{item.name}</div><div className="text-xs text-gray-500">${item.price}</div></div>
-                                <div className="flex items-center space-x-2">
-                                    <button onClick={()=>handleQtyChange(item.id, (cart[item.id]||0)-1)} className="w-8 border">-</button>
-                                    <input type="number" value={cart[item.id]||''} onChange={e=>handleQtyChange(item.id, e.target.value)} className="w-10 text-center border"/>
-                                    <button onClick={()=>handleQtyChange(item.id, (cart[item.id]||0)+1)} className="w-8 border">+</button>
-                                </div>
-                                <div className={`text-[10px] mt-1 text-right ${inventory[item.id] < 1 ? 'text-red-500' : 'text-gray-500'}`}>存: {item.isBox ? formatBoxQty(inventory[item.id]) : (inventory[item.id] || 0)}</div>
-                            </div>
-                        ))}
-                    </div>
-                    <div className="sticky bottom-4 bg-slate-800 text-white p-4 rounded-lg flex justify-between">
-                        <div className="font-bold">總計: ${isTransfer ? (prepareOrderData().itemDetails.reduce((a,b)=>a+(items.find(i=>i.id===b.id).cost*b.qty),0) + Number(shippingFee)).toLocaleString() : (prepareOrderData().productTotal + extraItems.reduce((a,b)=>a+b.amount,0) + Number(shippingFee)).toLocaleString()}</div>
-                        <div className="space-x-3 flex">
-                            <button onClick={copyToClipboard} className="bg-green-600 px-3 py-2 rounded text-sm flex items-center"><i className="fa-regular fa-copy mr-1"></i> 複製</button>
-                            {!isReadonly && <button onClick={handleSubmit} className={`${isTransfer?'bg-orange-500':'bg-blue-500'} px-4 py-2 rounded font-bold text-sm`}>{isTransfer ? '確認調撥' : '確認出貨'}</button>}
-                        </div>
-                    </div>
+                    <div className={`grid grid-cols-2 gap-3 ${isReadonly ? 'readonly-mode' : ''}`}>{items.map(item=>(<div key={item.id} className={`bg-white p-3 shadow-sm border flex justify-between ${isTransfer ? 'border-orange-200':''}`}><div><div className="font-bold">{item.name}</div><div className="text-xs text-gray-500">${item.price}</div></div><div className="flex items-center space-x-2"><button onClick={()=>handleQtyChange(item.id, (cart[item.id]||0)-1)} className="w-8 border">-</button><input type="number" value={cart[item.id]||''} onChange={e=>handleQtyChange(item.id, e.target.value)} className="w-10 text-center border"/><button onClick={()=>handleQtyChange(item.id, (cart[item.id]||0)+1)} className="w-8 border">+</button></div><div className={`text-[10px] mt-1 text-right ${inventory[item.id] < 1 ? 'text-red-500' : 'text-gray-500'}`}>存: {item.isBox ? formatBoxQty(inventory[item.id]) : (inventory[item.id] || 0)}</div></div>))}</div>
+                    <div className="sticky bottom-4 bg-slate-800 text-white p-4 rounded-lg flex justify-between"><div className="font-bold">總計: ${isTransfer ? (prepareOrderData().itemDetails.reduce((a,b)=>a+(items.find(i=>i.id===b.id).cost*b.qty),0) + Number(shippingFee)).toLocaleString() : (prepareOrderData().productTotal + extraItems.reduce((a,b)=>a+b.amount,0) + Number(shippingFee)).toLocaleString()}</div><div className="space-x-3 flex"><button onClick={copyToClipboard} className="bg-green-600 px-3 py-2 rounded text-sm flex items-center"><i className="fa-regular fa-copy mr-1"></i> 複製</button>{!isReadonly && <button onClick={handleSubmit} className={`${isTransfer?'bg-orange-500':'bg-blue-500'} px-4 py-2 rounded font-bold text-sm`}>{isTransfer ? '確認調撥' : '確認出貨'}</button>}</div></div>
                 </div>
             );
         };
 
         const StockInTab = ({ items, inventory, onSubmit, onUpdateInv, expenseNames, transactions, role }) => {
             const isReadonly = role === ROLES.VIEWER;
-            const [stockCart, setStockCart] = useState({}); 
-            const [otherExpenseName, setOtherExpenseName] = useState(''); 
-            const [otherExpenseAmount, setOtherExpenseAmount] = useState(''); 
-            const [date, setDate] = useState(moment().format('YYYY-MM-DD')); 
-            const [mode, setMode] = useState('purchase'); 
-            const [startDate, setStartDate] = useState(moment().startOf('month').format('YYYY-MM-DD'));
-            const [endDate, setEndDate] = useState(moment().endOf('month').format('YYYY-MM-DD'));
-            const [dashboardView, setDashboardView] = useState('frozen');
-
+            const [stockCart, setStockCart] = useState({}); const [otherExpenseName, setOtherExpenseName] = useState(''); const [otherExpenseAmount, setOtherExpenseAmount] = useState(''); const [date, setDate] = useState(moment().format('YYYY-MM-DD')); const [mode, setMode] = useState('purchase'); const [startDate, setStartDate] = useState(moment().startOf('month').format('YYYY-MM-DD')); const [endDate, setEndDate] = useState(moment().endOf('month').format('YYYY-MM-DD')); const [dashboardView, setDashboardView] = useState('frozen');
             const updateCart = (id, f, v) => { setStockCart(prev => { const cur = prev[id] || { qty: 0, cost: 0, currentInv: inventory[id] || 0 }; let nc = cur.cost; if(f==='qty'&&!nc && mode==='purchase'){const it=items.find(i=>i.id===id); if(it)nc=it.cost;} if(f==='cost')nc=Number(v); return {...prev, [id]:{...cur, qty:f==='qty'?Number(v):cur.qty, cost:nc}}; }); };
-            
-            const handleStockIn = () => { 
-                if(isReadonly) return;
-                if (mode === 'purchase') {
-                    let totalItemCost = 0; const raw = []; let txt = '【進貨登錄】\n';
-                    Object.entries(stockCart).forEach(([id,d])=>{ if(d.qty > 0){ const it=items.find(i=>i.id===id); txt+=`${it.name} x ${d.qty} (單價$${d.cost})\n`; onUpdateInv(id,d.qty); raw.push({id: it.id, name:it.name, qty:d.qty, cost:d.cost}); totalItemCost += (d.cost * d.qty); } });
-                    const expenseAmt = Number(otherExpenseAmount) || 0;
-                    if(raw.length === 0 && expenseAmt === 0) return alert('無內容');
-                    if(expenseAmt > 0) txt += `\n【其他費用】\n${otherExpenseName || '雜支'}: $${expenseAmt}`;
-                    const isFranchiseEquip = (otherExpenseName || '').includes('加盟器材');
-                    const actualPnLExpense = isFranchiseEquip ? 0 : expenseAmt;
-                    const rec = { id: Date.now(), date: moment(date).format('YYYY/MM/DD'), time: moment().format('A h:mm'), type: '進貨/支出', franchise: '-', content: txt, rawItems: raw, shipping: 0, income: 0, cost: totalItemCost + expenseAmt, rawExpenses: actualPnLExpense, profit: -actualPnLExpense, total: -(totalItemCost + expenseAmt) }; 
-                    onSubmit(rec); alert('已登錄進貨/支出');
-                } else {
-                    let txt = '【庫存校正】\n'; let raw = []; let hasChange = false; Object.entries(stockCart).forEach(([id, d]) => { const current = inventory[id] || 0; if (d.qty !== current) { const diff = d.qty - current; const it = items.find(i => i.id === id); txt += `${it.name}: ${current} -> ${d.qty} (差: ${diff})\n`; onUpdateInv(id, diff); raw.push({ id: id, name: it.name, change: diff, old: current, new: d.qty }); hasChange = true; } });
-                    if (!hasChange) return alert('無變更'); const rec={id:Date.now(), date:moment(date).format('YYYY/MM/DD'), time:moment().format('A h:mm'), type:'庫存校正', franchise:'-', content:txt, rawItems:raw, shipping:0, income:0, cost:0, profit:0, total:0}; onSubmit(rec); alert('已校正庫存');
-                }
-                setStockCart({}); setOtherExpenseName(''); setOtherExpenseAmount(''); 
-            };
-            
+            const handleStockIn = () => { if(isReadonly) return; if (mode === 'purchase') { let totalItemCost = 0; const raw = []; let txt = '【進貨登錄】\n'; Object.entries(stockCart).forEach(([id,d])=>{ if(d.qty > 0){ const it=items.find(i=>i.id===id); txt+=`${it.name} x ${d.qty} (單價$${d.cost})\n`; onUpdateInv(id,d.qty); raw.push({id: it.id, name:it.name, qty:d.qty, cost:d.cost}); totalItemCost += (d.cost * d.qty); } }); const expenseAmt = Number(otherExpenseAmount) || 0; if(raw.length === 0 && expenseAmt === 0) return alert('無內容'); if(expenseAmt > 0) txt += `\n【其他費用】\n${otherExpenseName || '雜支'}: $${expenseAmt}`; const isFranchiseEquip = (otherExpenseName || '').includes('加盟器材'); const actualPnLExpense = isFranchiseEquip ? 0 : expenseAmt; const rec = { id: Date.now(), date: moment(date).format('YYYY/MM/DD'), time: moment().format('A h:mm'), type: '進貨/支出', franchise: '-', content: txt, rawItems: raw, shipping: 0, income: 0, cost: totalItemCost + expenseAmt, rawExpenses: actualPnLExpense, profit: -actualPnLExpense, total: -(totalItemCost + expenseAmt) }; onSubmit(rec); alert('已登錄進貨/支出'); } else { let txt = '【庫存校正】\n'; let raw = []; let hasChange = false; Object.entries(stockCart).forEach(([id, d]) => { const current = inventory[id] || 0; if (d.qty !== current) { const diff = d.qty - current; const it = items.find(i => i.id === id); txt += `${it.name}: ${current} -> ${d.qty} (差: ${diff})\n`; onUpdateInv(id, diff); raw.push({ id: id, name: it.name, change: diff, old: current, new: d.qty }); hasChange = true; } }); if (!hasChange) return alert('無變更'); const rec={id:Date.now(), date:moment(date).format('YYYY/MM/DD'), time:moment().format('A h:mm'), type:'庫存校正', franchise:'-', content:txt, rawItems:raw, shipping:0, income:0, cost:0, profit:0, total:0}; onSubmit(rec); alert('已校正庫存'); } setStockCart({}); setOtherExpenseName(''); setOtherExpenseAmount(''); };
             useEffect(() => { if (mode === 'correct') { const newCart = {}; items.forEach(i => { newCart[i.id] = { qty: inventory[i.id] || 0, cost: 0 }; }); setStockCart(newCart); } else { setStockCart({}); } }, [mode, items, inventory]);
-
-            const rangeStats = useMemo(() => {
-                const filteredTrans = transactions.filter(t => t.type === '進貨/支出' && moment(t.date).isBetween(startDate, endDate, 'day', '[]'));
-                const stats = { frozen: { total: 0, qty: 0, items: [] }, assets: { total: 0, items: [] }, expenses: { total: 0, items: [] } };
-                const frozenIds = ['cut', 'squid', 'shrimp', 'burdock'];
-                const expenseMap = {}; 
-                filteredTrans.forEach(t => {
-                    if(t.rawItems) { t.rawItems.forEach(ri => { const amt = ri.cost * ri.qty; if(frozenIds.includes(ri.id)) { stats.frozen.total += amt; stats.frozen.qty += ri.qty; stats.frozen.items.push({ name: ri.name, val: `${ri.qty}箱 ($${amt.toLocaleString()})`, date: t.date }); } else { stats.assets.total += amt; stats.assets.items.push({ name: ri.name, val: `${ri.qty}${items.find(i=>i.id===ri.id)?.unit} ($${amt.toLocaleString()})`, date: t.date }); } }); }
-                    let expName = ''; let expAmt = 0;
-                    if(t.content && t.content.includes('【其他費用】')) { const match = t.content.match(/【其他費用】\n(.*?): \$([\d,]+)/); if(match) { expName = match[1].trim(); expAmt = parseFloat(match[2].replace(/,/g, '')); } } 
-                    else if (t.content && t.content.includes('雜支:')) { const match = t.content.match(/雜支: (.*?) \$([\d,]+)/); if(match) { expName = match[1].trim(); expAmt = parseFloat(match[2].replace(/,/g, '')); } }
-                    if (!expName && t.rawExpenses > 0) { expName = "一般雜支(未分類)"; expAmt = t.rawExpenses; }
-                    if (expAmt > 0) { if (expName.includes('加盟器材')) { stats.assets.total += expAmt; stats.assets.items.push({ name: expName, val: `$${expAmt.toLocaleString()}`, date: t.date }); } else { const key = expName.substring(0, 3); if (!expenseMap[key]) expenseMap[key] = { name: key + '...', total: 0, count: 0 }; expenseMap[key].total += expAmt; expenseMap[key].count += 1; expenseMap[key].fullName = expName; } }
-                });
-                stats.expenses.items = Object.values(expenseMap).map(g => ({ name: g.count > 1 ? `${g.name} (合併${g.count}筆)` : g.fullName, val: `$${g.total.toLocaleString()}`, total: g.total })).sort((a,b) => b.total - a.total);
-                stats.expenses.total = stats.expenses.items.reduce((a,b) => a + b.total, 0);
-                return stats;
-            }, [transactions, startDate, endDate, items]);
-
+            const rangeStats = useMemo(() => { const filteredTrans = transactions.filter(t => t.type === '進貨/支出' && moment(t.date).isBetween(startDate, endDate, 'day', '[]')); const stats = { frozen: { total: 0, qty: 0, items: [] }, assets: { total: 0, items: [] }, expenses: { total: 0, items: [] } }; const frozenIds = ['cut', 'squid', 'shrimp', 'burdock']; const expenseMap = {}; filteredTrans.forEach(t => { if(t.rawItems) { t.rawItems.forEach(ri => { const amt = ri.cost * ri.qty; if(frozenIds.includes(ri.id)) { stats.frozen.total += amt; stats.frozen.qty += ri.qty; stats.frozen.items.push({ name: ri.name, val: `${ri.qty}箱 ($${amt.toLocaleString()})`, date: t.date }); } else { stats.assets.total += amt; stats.assets.items.push({ name: ri.name, val: `${ri.qty}${items.find(i=>i.id===ri.id)?.unit} ($${amt.toLocaleString()})`, date: t.date }); } }); } let expName = ''; let expAmt = 0; if(t.content && t.content.includes('【其他費用】')) { const match = t.content.match(/【其他費用】\n(.*?): \$([\d,]+)/); if(match) { expName = match[1].trim(); expAmt = parseFloat(match[2].replace(/,/g, '')); } } else if (t.content && t.content.includes('雜支:')) { const match = t.content.match(/雜支: (.*?) \$([\d,]+)/); if(match) { expName = match[1].trim(); expAmt = parseFloat(match[2].replace(/,/g, '')); } } if (!expName && t.rawExpenses > 0) { expName = "一般雜支(未分類)"; expAmt = t.rawExpenses; } if (expAmt > 0) { if (expName.includes('加盟器材')) { stats.assets.total += expAmt; stats.assets.items.push({ name: expName, val: `$${expAmt.toLocaleString()}`, date: t.date }); } else { const key = expName.substring(0, 3); if (!expenseMap[key]) expenseMap[key] = { name: key + '...', total: 0, count: 0 }; expenseMap[key].total += expAmt; expenseMap[key].count += 1; expenseMap[key].fullName = expName; } } }); stats.expenses.items = Object.values(expenseMap).map(g => ({ name: g.count > 1 ? `${g.name} (合併${g.count}筆)` : g.fullName, val: `$${g.total.toLocaleString()}`, total: g.total })).sort((a,b) => b.total - a.total); stats.expenses.total = stats.expenses.items.reduce((a,b) => a + b.total, 0); return stats; }, [transactions, startDate, endDate, items]);
             const currentViewData = rangeStats[dashboardView];
-
             return (
                 <div className="space-y-6">
                     <datalist id="expense-list">{expenseNames.map(e=><option key={e} value={e}/>)}</datalist>
-                    <div className="flex bg-gray-200 p-1 rounded">
-                        <button onClick={()=>setMode('purchase')} className={`flex-1 py-2 rounded text-sm font-bold ${mode==='purchase'?'bg-white shadow text-blue-600':''}`}>進貨/資產登入</button>
-                        <button onClick={()=>setMode('correct')} className={`flex-1 py-2 rounded text-sm font-bold ${mode==='correct'?'bg-white shadow text-red-600':''}`}>庫存校正</button>
-                    </div>
-
+                    <div className="flex bg-gray-200 p-1 rounded"><button onClick={()=>setMode('purchase')} className={`flex-1 py-2 rounded text-sm font-bold ${mode==='purchase'?'bg-white shadow text-blue-600':''}`}>進貨/資產登入</button><button onClick={()=>setMode('correct')} className={`flex-1 py-2 rounded text-sm font-bold ${mode==='correct'?'bg-white shadow text-red-600':''}`}>庫庫存校正</button></div>
                     <div className="bg-white p-4 shadow">
-                        <div className="mb-4 grid grid-cols-2 gap-4">
-                            <div className={isReadonly ? 'readonly-mode' : ''}><label className="text-sm text-gray-500 font-bold mr-2">操作日期</label><input type="date" value={date} onChange={e=>setDate(e.target.value)} className="border rounded p-1 w-full"/></div>
-                            <div>
-                                <label className="text-xs text-gray-500 font-bold block mb-1">統計區間</label>
-                                <div className="flex gap-1">
-                                    <input type="date" value={startDate} onChange={e=>setStartDate(e.target.value)} className="border p-1 w-full text-xs rounded"/>
-                                    <input type="date" value={endDate} onChange={e=>setEndDate(e.target.value)} className="border p-1 w-full text-xs rounded"/>
-                                </div>
-                            </div>
-                        </div>
-
-                        {mode === 'purchase' && (
-                            <div className="mb-6 bg-slate-50 p-3 rounded border border-slate-200 animate-fade-in">
-                                <div className="flex justify-between items-center mb-2 border-b pb-1">
-                                    <h4 className="font-bold text-slate-700">區間進貨儀表板</h4>
-                                    <select value={dashboardView} onChange={e=>setDashboardView(e.target.value)} className="text-sm border rounded p-1">
-                                        <option value="frozen">四大冷凍品</option>
-                                        <option value="assets">資產購置 (含器材)</option>
-                                        <option value="expenses">營運雜支</option>
-                                    </select>
-                                </div>
-                                <div className="flex gap-4">
-                                    <div className="w-1/3 bg-white p-3 rounded shadow-sm flex flex-col justify-center items-center border-t-4 border-indigo-500">
-                                        <div className="text-xs text-gray-500 font-bold">總金額</div>
-                                        <div className="text-lg font-bold text-indigo-800">${currentViewData.total.toLocaleString()}</div>
-                                        {dashboardView === 'frozen' && <div className="text-xs text-indigo-600">{currentViewData.qty} 箱</div>}
-                                    </div>
-                                    <div className="w-2/3 bg-white p-3 rounded shadow-sm border-t-4 border-gray-400 overflow-y-auto max-h-32 custom-scrollbar">
-                                        <div className="text-xs text-gray-500 font-bold mb-1">明細列表</div>
-                                        {currentViewData.items.length === 0 ? <div className="text-xs text-gray-300">無資料</div> : currentViewData.items.map((item, idx) => (<div key={idx} className="flex justify-between text-xs border-b border-gray-100 last:border-0 py-1"><span className="truncate pr-2">{item.name} <span className="text-gray-400">({item.date})</span></span><span className="font-bold whitespace-nowrap">{item.val}</span></div>))}
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        <div className={`space-y-3 ${isReadonly ? 'readonly-mode' : ''}`}>
-                            <div className="flex text-xs font-bold text-gray-500 pb-2 border-b"><div className="w-1/3">品項</div><div className="w-1/3">{mode==='purchase'?'進貨數量':'實際盤點數'}</div><div className="w-1/3">{mode==='purchase'?'單價(成本)':'差異預覽'}</div></div>
-                            {items.map(i=>{
-                                const currentInv = inventory[i.id] || 0; const inputQty = stockCart[i.id]?.qty; const diff = mode === 'correct' ? (inputQty !== undefined ? inputQty - currentInv : 0) : 0; 
-                                return (
-                                    <div key={i.id} className="flex items-center space-x-2 border-b pb-2"><div className="w-1/3">{i.name}<div className="text-[10px] text-gray-400">現有: {i.isBox ? formatBoxQty(currentInv) : currentInv}</div></div><div className="w-1/3"><input type="number" className={`w-full border p-1 ${mode==='correct' && diff !== 0 ? 'bg-yellow-50 font-bold':''}`} onChange={e=>updateCart(i.id,'qty',e.target.value)} value={stockCart[i.id]?.qty !== undefined ? stockCart[i.id].qty : ''} placeholder={mode==='correct' ? currentInv : '0'}/></div><div className="w-1/3">{mode === 'purchase' ? (<input type="number" className="w-full border p-1" onChange={e=>updateCart(i.id,'cost',e.target.value)} placeholder={i.cost}/>) : (<span className={`text-xs ${diff !== 0 ? 'text-red-500 font-bold' : 'text-gray-300'}`}>{diff > 0 ? `+${diff}` : diff}</span>)}</div></div>
-                                );
-                            })}
-                        </div>
+                        <div className="mb-4 grid grid-cols-2 gap-4"><div className={isReadonly ? 'readonly-mode' : ''}><label className="text-sm text-gray-500 font-bold mr-2">操作日期</label><input type="date" value={date} onChange={e=>setDate(e.target.value)} className="border rounded p-1 w-full"/></div><div><label className="text-xs text-gray-500 font-bold block mb-1">統計區間</label><div className="flex gap-1"><input type="date" value={startDate} onChange={e=>setStartDate(e.target.value)} className="border p-1 w-full text-xs rounded"/><input type="date" value={endDate} onChange={e=>setEndDate(e.target.value)} className="border p-1 w-full text-xs rounded"/></div></div></div>
+                        {mode === 'purchase' && (<div className="mb-6 bg-slate-50 p-3 rounded border border-slate-200 animate-fade-in"><div className="flex justify-between items-center mb-2 border-b pb-1"><h4 className="font-bold text-slate-700">區間進貨儀表板</h4><select value={dashboardView} onChange={e=>setDashboardView(e.target.value)} className="text-sm border rounded p-1"><option value="frozen">四大冷凍品</option><option value="assets">資產購置 (含器材)</option><option value="expenses">營運雜支</option></select></div><div className="flex gap-4"><div className="w-1/3 bg-white p-3 rounded shadow-sm flex flex-col justify-center items-center border-t-4 border-indigo-500"><div className="text-xs text-gray-500 font-bold">總金額</div><div className="text-lg font-bold text-indigo-800">${currentViewData.total.toLocaleString()}</div>{dashboardView === 'frozen' && <div className="text-xs text-indigo-600">{currentViewData.qty} 箱</div>}</div><div className="w-2/3 bg-white p-3 rounded shadow-sm border-t-4 border-gray-400 overflow-y-auto max-h-32 custom-scrollbar"><div className="text-xs text-gray-500 font-bold mb-1">明細列表</div>{currentViewData.items.length === 0 ? <div className="text-xs text-gray-300">無資料</div> : currentViewData.items.map((item, idx) => (<div key={idx} className="flex justify-between text-xs border-b border-gray-100 last:border-0 py-1"><span className="truncate pr-2">{item.name} <span className="text-gray-400">({item.date})</span></span><span className="font-bold whitespace-nowrap">{item.val}</span></div>))}</div></div></div>)}
+                        <div className={`space-y-3 ${isReadonly ? 'readonly-mode' : ''}`}><div className="flex text-xs font-bold text-gray-500 pb-2 border-b"><div className="w-1/3">品項</div><div className="w-1/3">{mode==='purchase'?'進貨數量':'實際盤點數'}</div><div className="w-1/3">{mode==='purchase'?'單價(成本)':'差異預覽'}</div></div>{items.map(i=>{const currentInv = inventory[i.id] || 0; const inputQty = stockCart[i.id]?.qty; const diff = mode === 'correct' ? (inputQty !== undefined ? inputQty - currentInv : 0) : 0; return (<div key={i.id} className="flex items-center space-x-2 border-b pb-2"><div className="w-1/3">{i.name}<div className="text-[10px] text-gray-400">現有: {i.isBox ? formatBoxQty(currentInv) : currentInv}</div></div><div className="w-1/3"><input type="number" className={`w-full border p-1 ${mode==='correct' && diff !== 0 ? 'bg-yellow-50 font-bold':''}`} onChange={e=>updateCart(i.id,'qty',e.target.value)} value={stockCart[i.id]?.qty !== undefined ? stockCart[i.id].qty : ''} placeholder={mode==='correct' ? currentInv : '0'}/></div><div className="w-1/3">{mode === 'purchase' ? (<input type="number" className="w-full border p-1" onChange={e=>updateCart(i.id,'cost',e.target.value)} placeholder={i.cost}/>) : (<span className={`text-xs ${diff !== 0 ? 'text-red-500 font-bold' : 'text-gray-300'}`}>{diff > 0 ? `+${diff}` : diff}</span>)}</div></div>);})}</div>
                     </div>
-                    {mode === 'purchase' && (
-                        <div className={`bg-white p-4 shadow ${isReadonly ? 'readonly-mode' : ''}`}>
-                             <div className="text-xs font-bold text-gray-500 mb-2">其他雜支登錄 (若為"加盟器材"則計入資產)</div>
-                             <div className="grid grid-cols-2 gap-4"><input type="text" list="expense-list" placeholder="項目 (如: 加盟器材, 運費)" className="border p-2" value={otherExpenseName} onChange={e=>setOtherExpenseName(e.target.value)}/><input type="number" placeholder="金額" className="border p-2" value={otherExpenseAmount} onChange={e=>setOtherExpenseAmount(e.target.value)}/></div>
-                        </div>
-                    )}
+                    {mode === 'purchase' && (<div className={`bg-white p-4 shadow ${isReadonly ? 'readonly-mode' : ''}`}><div className="text-xs font-bold text-gray-500 mb-2">其他雜支登錄 (若為"加盟器材"則計入資產)</div><div className="grid grid-cols-2 gap-4"><input type="text" list="expense-list" placeholder="項目 (如: 加盟器材, 運費)" className="border p-2" value={otherExpenseName} onChange={e=>setOtherExpenseName(e.target.value)}/><input type="number" placeholder="金額" className="border p-2" value={otherExpenseAmount} onChange={e=>setOtherExpenseAmount(e.target.value)}/></div></div>)}
                     {!isReadonly && <button onClick={handleStockIn} className={`w-full py-3 rounded shadow text-white font-bold ${mode==='purchase'?'bg-blue-600':'bg-red-600'}`}>{mode === 'purchase' ? '確認登錄' : '確認校正'}</button>}
                 </div>
             );
@@ -948,96 +617,32 @@
 
         const FranchiseTab = ({ items, inventory, onSubmit, onUpdateInv, onUpdateTrans, onDelete, transactions, franchises, settings, genReceipt, role }) => {
             const isReadonly = role === ROLES.VIEWER;
-            const [viewMode, setViewMode] = useState('new'); 
-            const [fName, setFName] = useState(''); 
-            const [payType, setPayType] = useState('cash'); 
-            const [totalRevenue, setTotalRevenue] = useState(0); 
-            const [incomeDate, setIncomeDate] = useState(moment().format('YYYY-MM-DD')); 
-            const [setupExpenses, setSetupExpenses] = useState([]); 
-            const [tempExpName, setTempExpName] = useState(''); 
-            const [tempExpAmount, setTempExpAmount] = useState(''); 
-            const [starterPack, setStarterPack] = useState(settings.starterPack); 
-            const [equipDate, setEquipDate] = useState(''); 
-            const [frozenDate, setFrozenDate] = useState(''); 
-            const [selectedFranchiseId, setSelectedFranchiseId] = useState(null); 
-            const [trackerData, setTrackerData] = useState(null); 
-            const [cashInstData, setCashInstData] = useState({ initial: '', period: '', remaining: '', perPeriod: '' });
-            const [newTrackerExpName, setNewTrackerExpName] = useState(''); 
-            const [newTrackerExpAmount, setNewTrackerExpAmount] = useState('');
-
+            const [viewMode, setViewMode] = useState('new'); const [fName, setFName] = useState(''); const [payType, setPayType] = useState('cash'); const [totalRevenue, setTotalRevenue] = useState(0); const [incomeDate, setIncomeDate] = useState(moment().format('YYYY-MM-DD')); const [setupExpenses, setSetupExpenses] = useState([]); const [tempExpName, setTempExpName] = useState(''); const [tempExpAmount, setTempExpAmount] = useState(''); const [starterPack, setStarterPack] = useState(settings.starterPack); const [equipDate, setEquipDate] = useState(''); const [frozenDate, setFrozenDate] = useState(''); const [selectedFranchiseId, setSelectedFranchiseId] = useState(null); const [trackerData, setTrackerData] = useState(null); const [cashInstData, setCashInstData] = useState({ initial: '', period: '', remaining: '', perPeriod: '' }); const [newTrackerExpName, setNewTrackerExpName] = useState(''); const [newTrackerExpAmount, setNewTrackerExpAmount] = useState('');
             useEffect(() => { setStarterPack(settings.starterPack); if(payType === 'install_chailease') { setTotalRevenue(settings.constants.chaileaseBase); } else { setTotalRevenue(''); } }, [settings, payType]);
-            const chaileaseTax = payType === 'install_chailease' ? (settings.constants.chaileaseBase * 0.05) : 0;
-            const chaileaseFee = payType === 'install_chailease' ? settings.constants.chaileaseFee : 0;
-            const setupTotal = setupExpenses.reduce((a,b)=>a+b.amount,0);
-            
+            const chaileaseTax = payType === 'install_chailease' ? (settings.constants.chaileaseBase * 0.05) : 0; const chaileaseFee = payType === 'install_chailease' ? settings.constants.chaileaseFee : 0; const setupTotal = setupExpenses.reduce((a,b)=>a+b.amount,0);
             const addSetupExpense = () => { if(!tempExpName || !tempExpAmount) return; setSetupExpenses([...setupExpenses, { id: Date.now(), name: tempExpName, amount: Number(tempExpAmount) }]); setTempExpName(''); setTempExpAmount(''); };
             const removeSetupExpense = (id) => { setSetupExpenses(setupExpenses.filter(e => e.id !== id)); };
             const updateStarterQty = (idx, val) => { const newPack = [...starterPack]; newPack[idx].qty = Number(val); setStarterPack(newPack); };
-
-            const handleFranchiseSubmit = () => { 
-                if(isReadonly) return;
-                if(!fName) return alert('請輸入店名'); 
-                let goodsCost = 0; let equipCost = 0;
-                starterPack.forEach(p => { const item = items.find(i => i.id === p.id); let unitCost = (p.id === 'equip_set') ? 43200 : (item ? item.cost : 0); const cost = unitCost * p.qty; if(p.type === 'equipment' || p.id === 'equip_set') equipCost += cost; else goodsCost += cost; if (p.qty > 0 && p.id !== 'equip_set') onUpdateInv(p.id, -p.qty); });
-                const invisibleCost = chaileaseTax + chaileaseFee; const totalCost = setupTotal + equipCost + goodsCost + invisibleCost; const recordedRevenue = Number(totalRevenue); const finalProfit = recordedRevenue - totalCost;
-                let content = `【加盟開通】_${fName}\n入帳日期：${moment(incomeDate).format('YYYY/MM/DD')}\n`;
-                if (payType === 'cash') content += `付款方式：現金\n總金額：$${recordedRevenue.toLocaleString()}\n`; else if (payType === 'install_chailease') { content += `付款方式：中租分期\n發票金額(基準)：$${recordedRevenue.toLocaleString()}\n`; content += `[隱形支出] 發票稅額: $${chaileaseTax}\n中租手續費: $${chaileaseFee}\n`; } else if (payType === 'install_cash') { content += `付款方式：現金分期\n總金額：$${recordedRevenue.toLocaleString()}\n(頭款:${cashInstData.initial}, 尾款:${cashInstData.remaining})\n`; }
-                content += `------------------\n[成本結構]\n`; setupExpenses.forEach(e => content += `開辦費-${e.name}: $${e.amount}\n`); content += `器材成本: $${equipCost}\n贈品成本: $${goodsCost}\n淨利預估: $${finalProfit.toLocaleString()}`;
-                const fData = { fName, incomeDate, payType, baseRevenue: totalRevenue, chaileaseTax, chaileaseFee, setupExpenses, equipDate, frozenDate, starterPack, equipCost, goodsCost, starterCost: equipCost + goodsCost, cashInst: payType==='install_cash' ? cashInstData : null };
-                const rec = { id: Date.now(), date: moment(incomeDate).format('YYYY/MM/DD'), time: moment().format('A h:mm'), type: '加盟', franchise: fName, content, shipping: 0, income: recordedRevenue, cost: totalCost, profit: finalProfit, total: recordedRevenue, franchiseData: fData }; 
-                onSubmit(rec); alert('加盟資料已建立！'); setFName(''); setSetupExpenses([]); setEquipDate(''); setFrozenDate(''); setCashInstData({ initial: '', period: '', remaining: '', perPeriod: '' });
-            };
-            
+            const handleFranchiseSubmit = () => { if(isReadonly) return; if(!fName) return alert('請輸入店名'); let goodsCost = 0; let equipCost = 0; starterPack.forEach(p => { const item = items.find(i => i.id === p.id); let unitCost = (p.id === 'equip_set') ? 43200 : (item ? item.cost : 0); const cost = unitCost * p.qty; if(p.type === 'equipment' || p.id === 'equip_set') equipCost += cost; else goodsCost += cost; if (p.qty > 0 && p.id !== 'equip_set') onUpdateInv(p.id, -p.qty); }); const invisibleCost = chaileaseTax + chaileaseFee; const totalCost = setupTotal + equipCost + goodsCost + invisibleCost; const recordedRevenue = Number(totalRevenue); const finalProfit = recordedRevenue - totalCost; let content = `【加盟開通】_${fName}\n入帳日期：${moment(incomeDate).format('YYYY/MM/DD')}\n`; if (payType === 'cash') content += `付款方式：現金\n總金額：$${recordedRevenue.toLocaleString()}\n`; else if (payType === 'install_chailease') { content += `付款方式：中租分期\n發票金額(基準)：$${recordedRevenue.toLocaleString()}\n`; content += `[隱形支出] 發票稅額: $${chaileaseTax}\n中租手續費: $${chaileaseFee}\n`; } else if (payType === 'install_cash') { content += `付款方式：現金分期\n總金額：$${recordedRevenue.toLocaleString()}\n(頭款:${cashInstData.initial}, 尾款:${cashInstData.remaining})\n`; } content += `------------------\n[成本結構]\n`; setupExpenses.forEach(e => content += `開辦費-${e.name}: $${e.amount}\n`); content += `器材成本: $${equipCost}\n贈品成本: $${goodsCost}\n淨利預估: $${finalProfit.toLocaleString()}`; const fData = { fName, incomeDate, payType, baseRevenue: totalRevenue, chaileaseTax, chaileaseFee, setupExpenses, equipDate, frozenDate, starterPack, equipCost, goodsCost, starterCost: equipCost + goodsCost, cashInst: payType==='install_cash' ? cashInstData : null }; const rec = { id: Date.now(), date: moment(incomeDate).format('YYYY/MM/DD'), time: moment().format('A h:mm'), type: '加盟', franchise: fName, content, shipping: 0, income: recordedRevenue, cost: totalCost, profit: finalProfit, total: recordedRevenue, franchiseData: fData }; onSubmit(rec); alert('加盟資料已建立！'); setFName(''); setSetupExpenses([]); setEquipDate(''); setFrozenDate(''); setCashInstData({ initial: '', period: '', remaining: '', perPeriod: '' }); };
             const addTrackerExpense = () => { if(!newTrackerExpName || !newTrackerExpAmount) return; const newExp = { id: Date.now(), name: newTrackerExpName, amount: Number(newTrackerExpAmount) }; const newExpenses = [...(trackerData.setupExpenses || []), newExp]; setTrackerData({ ...trackerData, setupExpenses: newExpenses }); setNewTrackerExpName(''); setNewTrackerExpAmount(''); };
-            const saveTrackerChanges = () => { 
-                if(isReadonly) return;
-                const currentSetupTotal = (trackerData.setupExpenses || []).reduce((a,b)=>a+b.amount,0); const currentEquip = trackerData.equipCost || 0; const currentGoods = trackerData.goodsCost || (trackerData.starterCost || 0) - currentEquip; const currentInvisible = (trackerData.chaileaseTax || 0) + (trackerData.chaileaseFee || 0); const totalCost = currentSetupTotal + currentEquip + currentGoods + currentInvisible; const totalRev = Number(trackerData.baseRevenue || trackerData.income); const newProfit = totalRev - totalCost;
-                let newContent = `【加盟追蹤】_${trackerData.fName}\n更新日期: ${moment().format('YYYY/MM/DD')}\n器材出貨: ${trackerData.equipDate||'未定'}\n冷凍出貨: ${trackerData.frozenDate||'未定'}\n------------------\n目前總成本: $${totalCost.toLocaleString()}\n修正淨利: $${newProfit.toLocaleString()}`;
-                onUpdateTrans(selectedFranchiseId, { franchiseData: trackerData, content: newContent, cost: totalCost, profit: newProfit }); alert('已更新追蹤資訊'); setSelectedFranchiseId(null);
-            };
-            
+            const saveTrackerChanges = () => { if(isReadonly) return; const currentSetupTotal = (trackerData.setupExpenses || []).reduce((a,b)=>a+b.amount,0); const currentEquip = trackerData.equipCost || 0; const currentGoods = trackerData.goodsCost || (trackerData.starterCost || 0) - currentEquip; const currentInvisible = (trackerData.chaileaseTax || 0) + (trackerData.chaileaseFee || 0); const totalCost = currentSetupTotal + currentEquip + currentGoods + currentInvisible; const totalRev = Number(trackerData.baseRevenue || trackerData.income); const newProfit = totalRev - totalCost; let newContent = `【加盟追蹤】_${trackerData.fName}\n更新日期: ${moment().format('YYYY/MM/DD')}\n器材出貨: ${trackerData.equipDate||'未定'}\n冷凍出貨: ${trackerData.frozenDate||'未定'}\n------------------\n目前總成本: $${totalCost.toLocaleString()}\n修正淨利: $${newProfit.toLocaleString()}`; onUpdateTrans(selectedFranchiseId, { franchiseData: trackerData, content: newContent, cost: totalCost, profit: newProfit }); alert('已更新追蹤資訊'); setSelectedFranchiseId(null); };
             const trackerSetupTotal = trackerData ? (trackerData.setupExpenses||[]).reduce((a,b)=>a+b.amount,0) : 0;
-
             return (
                 <div className="bg-white p-6 shadow space-y-6">
                     <datalist id="franchise-list-new">{franchises.filter(f => f !== '湳雅直營店').map(f=><option key={f} value={f}/>)}</datalist>
-                    <div className="flex space-x-2 border-b mb-4">
-                        <button onClick={()=>setViewMode('new')} className={`pb-2 px-4 ${viewMode==='new'?'border-b-2 border-indigo-600 font-bold text-indigo-600':''}`}>新增加盟</button>
-                        <button onClick={()=>setViewMode('tracker')} className={`pb-2 px-4 ${viewMode==='tracker'?'border-b-2 border-indigo-600 font-bold text-indigo-600':''}`}>進度追蹤 / 補登</button>
-                    </div>
-
+                    <div className="flex space-x-2 border-b mb-4"><button onClick={()=>setViewMode('new')} className={`pb-2 px-4 ${viewMode==='new'?'border-b-2 border-indigo-600 font-bold text-indigo-600':''}`}>新增加盟</button><button onClick={()=>setViewMode('tracker')} className={`pb-2 px-4 ${viewMode==='tracker'?'border-b-2 border-indigo-600 font-bold text-indigo-600':''}`}>進度追蹤 / 補登</button></div>
                     {viewMode==='new' ? (
                         <div className={`space-y-4 animate-fade-in ${isReadonly ? 'readonly-mode' : ''}`}>
                             <div className="bg-slate-50 p-4 rounded border-l-4 border-indigo-500"><h4 className="font-bold mb-4 text-indigo-700">基本資料設定</h4><div className="grid grid-cols-1 md:grid-cols-2 gap-4"><input type="text" list="franchise-list-new" value={fName} onChange={e=>setFName(e.target.value)} placeholder="加盟店名" className="w-full border p-2 rounded"/><input type="date" value={incomeDate} onChange={e=>setIncomeDate(e.target.value)} className="w-full border p-2 rounded"/></div></div>
                             <div className="bg-green-50 p-4 rounded border-l-4 border-green-500"><h4 className="font-bold mb-4 text-green-700">付款方式與金額</h4><div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4"><label className="flex items-center space-x-2 bg-white p-3 rounded border"><input type="radio" name="payType" value="cash" checked={payType==='cash'} onChange={e=>setPayType(e.target.value)} /><span className="font-bold">現金全額</span></label><label className="flex items-center space-x-2 bg-white p-3 rounded border"><input type="radio" name="payType" value="install_chailease" checked={payType==='install_chailease'} onChange={e=>setPayType(e.target.value)} /><span className="font-bold">中租分期</span></label><label className="flex items-center space-x-2 bg-white p-3 rounded border"><input type="radio" name="payType" value="install_cash" checked={payType==='install_cash'} onChange={e=>setPayType(e.target.value)} /><span className="font-bold">現金分期</span></label></div>{payType === 'cash' && <input type="number" value={totalRevenue} onChange={e=>setTotalRevenue(e.target.value)} placeholder="輸入總入帳金額" className="w-full border p-3 rounded text-lg font-bold text-green-700" />}{payType === 'install_chailease' && <div className="bg-white p-3 rounded border"><span className="text-sm">發票金額:</span><input type="number" value={totalRevenue} onChange={e=>setTotalRevenue(e.target.value)} className="border p-1 w-32 ml-2 font-bold"/></div>}{payType === 'install_cash' && <div className="bg-white p-3 rounded border space-y-3"><input type="number" value={totalRevenue} onChange={e=>setTotalRevenue(e.target.value)} className="w-full border p-1 font-bold" placeholder="總金額"/><div className="grid grid-cols-2 gap-2"><input type="number" placeholder="頭款" value={cashInstData.initial} onChange={e=>setCashInstData({...cashInstData, initial:e.target.value})} className="border p-1"/><input type="number" placeholder="尾款" value={cashInstData.remaining} onChange={e=>setCashInstData({...cashInstData, remaining:e.target.value})} className="border p-1"/></div></div>}</div>
                             <div className={`p-4 rounded border-l-4 bg-gray-50 border-gray-400`}><div className="flex justify-between items-center mb-2"><h4 className="font-bold text-gray-700">開辦費支出 (預算: ${settings.constants.setupBudget.toLocaleString()})</h4><span className={settings.constants.setupBudget-setupTotal < 0 ? 'text-red-600 font-bold' : 'text-green-600 text-sm'}>剩餘: ${(settings.constants.setupBudget-setupTotal).toLocaleString()}</span></div><div className="flex gap-2 mb-2"><input type="text" placeholder="項目" value={tempExpName} onChange={e=>setTempExpName(e.target.value)} className="border p-2 flex-1 rounded"/><input type="number" placeholder="金額" className="w-24 border p-2 rounded" value={tempExpAmount} onChange={e=>setTempExpAmount(e.target.value)}/><button onClick={addSetupExpense} className="bg-gray-200 px-4 rounded font-bold text-gray-600">+</button></div><div className="text-sm max-h-32 overflow-y-auto bg-white p-2 border rounded">{setupExpenses.map(i=><div key={i.id} className="flex justify-between border-b border-gray-100 py-1"><span>{i.name}</span><span>${i.amount} <button onClick={()=>removeSetupExpense(i.id)} className="text-red-500 ml-2">x</button></span></div>)}</div></div>
-                            <div className="bg-blue-50 p-4 rounded border-l-4 border-blue-500"><h4 className="font-bold text-blue-700 mb-4">加盟贈送清單</h4><div className="grid grid-cols-2 gap-4 mb-4"><div><label className="text-xs font-bold">器材/常溫出貨</label><input type="date" value={equipDate} onChange={e=>setEquipDate(e.target.value)} className="border p-2 w-full rounded"/></div><div><label className="text-xs font-bold text-blue-600">冷凍出貨</label><input type="date" value={frozenDate} onChange={e=>setFrozenDate(e.target.value)} className="border p-2 w-full rounded"/></div></div><div className="h-60 overflow-y-auto text-xs bg-white p-2 border rounded space-y-1">{starterPack.map((p, idx)=>(<div key={idx} className="flex justify-between items-center border-b pb-1"><span className={p.type==='frozen'?'text-blue-600':p.type==='equipment'?'text-orange-600 font-bold':'text-gray-700'}>{p.name}</span><div className="flex items-center"><input type="number" value={p.qty} onChange={(e)=>updateStarterQty(idx, e.target.value)} className="w-10 border text-center mr-1 rounded" /><span className="text-gray-500">{p.unit}</span></div></div>))}</div></div>
+                            <div className="bg-blue-50 p-4 rounded border-l-4 border-blue-500"><h4 className="font-bold text-blue-700 mb-4">加盟贈送清單預設值</h4><div className="grid grid-cols-2 gap-4 mb-4"><div><label className="text-xs font-bold">器材/常溫出貨</label><input type="date" value={equipDate} onChange={e=>setEquipDate(e.target.value)} className="border p-2 w-full rounded"/></div><div><label className="text-xs font-bold text-blue-600">冷凍出貨</label><input type="date" value={frozenDate} onChange={e=>setFrozenDate(e.target.value)} className="border p-2 w-full rounded"/></div></div><div className="h-60 overflow-y-auto text-xs bg-white p-2 border rounded space-y-1">{starterPack.map((p, idx)=>(<div key={idx} className="flex justify-between items-center border-b pb-1"><span className={p.type==='frozen'?'text-blue-600':p.type==='equipment'?'text-orange-600 font-bold':'text-gray-700'}>{p.name}</span><div className="flex items-center"><input type="number" value={p.qty} onChange={(e)=>updateStarterQty(idx, e.target.value)} className="w-10 border text-center mr-1 rounded" /><span className="text-gray-500">{p.unit}</span></div></div>))}</div></div>
                             {!isReadonly && <button onClick={handleFranchiseSubmit} className="w-full bg-indigo-600 text-white py-4 rounded-lg font-bold text-lg shadow-lg">確認建立加盟資料</button>}
                         </div>
                     ) : (
                         <div className="space-y-4 animate-fade-in">
-                            {transactions.filter(t=>t.type==='加盟').map(t=>(
-                                <div key={t.id} className="border p-4 bg-white relative shadow-sm cursor-pointer hover:bg-gray-50 rounded-lg" onClick={()=>{setSelectedFranchiseId(t.id);setTrackerData(t.franchiseData)}}>
-                                    <div className="flex justify-between items-center mb-2"><div className="flex items-center space-x-2"><span className="font-bold text-lg text-indigo-700">{t.franchise}</span><span className="text-xs bg-gray-200 px-2 py-0.5 rounded text-gray-600">{t.date}</span></div><div className="text-right"><div className="font-bold text-green-600">${t.income.toLocaleString()}</div></div></div>
-                                    <div className="grid grid-cols-2 gap-2 text-sm text-gray-500"><div>付款: {t.franchiseData.payType==='cash'?'現金':t.franchiseData.payType==='install_chailease'?'中租':'現金分期'}</div><div>器材: {t.franchiseData.equipDate||'未定'}</div><div>冷凍: {t.franchiseData.frozenDate||'未定'}</div></div>
-                                    {!isReadonly && <button onClick={(e)=>{e.stopPropagation(); onDelete(t.id, t.type)}} className="absolute top-2 right-2 text-gray-300 hover:text-red-500 p-2"><i className="fa-solid fa-trash-can"></i></button>}
-                                </div>
-                            ))}
-                            {selectedFranchiseId && trackerData && (
-                                <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-[60]">
-                                    <div className="bg-white p-6 w-full max-w-lg rounded-xl shadow-2xl overflow-y-auto max-h-[90vh]">
-                                        <div className="flex justify-between items-center mb-4 border-b pb-2"><h3 className="font-bold text-xl">追蹤: {trackerData.fName}</h3><button onClick={()=>setSelectedFranchiseId(null)} className="text-gray-400 hover:text-gray-600">x</button></div>
-                                        <div className={`space-y-6 ${isReadonly ? 'readonly-mode' : ''}`}>
-                                            <div className="bg-blue-50 p-3 rounded border border-blue-100"><h4 className="font-bold text-sm text-blue-700 mb-2">出貨進度補登</h4><div className="grid grid-cols-2 gap-4"><div><label className="text-xs font-bold text-gray-500">器材/常溫</label><input type="date" value={trackerData.equipDate} onChange={e=>setTrackerData({...trackerData, equipDate:e.target.value})} className="border p-2 w-full rounded bg-white"/></div><div><label className="text-xs font-bold text-blue-500">冷凍出貨</label><input type="date" value={trackerData.frozenDate} onChange={e=>setTrackerData({...trackerData, frozenDate:e.target.value})} className="border p-2 w-full rounded bg-white"/></div></div></div>
-                                            <div className="bg-red-50 p-3 rounded border border-red-100"><div className="flex justify-between items-center mb-2"><h4 className="font-bold text-sm text-red-700">開辦費補登</h4><span className={`text-xs ${trackerSetupTotal > settings.constants.setupBudget ? 'text-red-600 font-bold' : 'text-green-600'}`}>{trackerSetupTotal > settings.constants.setupBudget ? `已超支` : `剩餘 $${(settings.constants.setupBudget-trackerSetupTotal).toLocaleString()}`}</span></div><div className="flex gap-2 mb-2"><input type="text" placeholder="項目" value={newTrackerExpName} onChange={e=>setNewTrackerExpName(e.target.value)} className="border p-2 flex-1 rounded text-sm"/><input type="number" placeholder="金額" className="w-20 border p-2 rounded text-sm" value={newTrackerExpAmount} onChange={e=>setNewTrackerExpAmount(e.target.value)}/><button onClick={addTrackerExpense} className="bg-red-500 text-white px-3 rounded text-sm font-bold">新增</button></div><div className="max-h-32 overflow-y-auto text-sm bg-white border p-1 rounded">{(trackerData.setupExpenses||[]).map((exp, idx) => (<div key={idx} className="flex justify-between py-1 border-b border-gray-100 px-2"><span>{exp.name}</span><span>${exp.amount.toLocaleString()}</span></div>))}</div></div>
-                                        </div>
-                                        <div className="flex gap-3 mt-6">
-                                            {!isReadonly && <button onClick={saveTrackerChanges} className="flex-1 bg-indigo-600 text-white py-3 rounded-lg font-bold">儲存變更</button>}
-                                            <button onClick={()=>setSelectedFranchiseId(null)} className="flex-1 bg-gray-200 text-gray-700 py-3 rounded-lg font-bold">取消關閉</button>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
+                            {transactions.filter(t=>t.type==='加盟').map(t=>(<div key={t.id} className="border p-4 bg-white relative shadow-sm cursor-pointer hover:bg-gray-50 rounded-lg" onClick={()=>{setSelectedFranchiseId(t.id);setTrackerData(t.franchiseData)}}><div className="flex justify-between items-center mb-2"><div className="flex items-center space-x-2"><span className="font-bold text-lg text-indigo-700">{t.franchise}</span><span className="text-xs bg-gray-200 px-2 py-0.5 rounded text-gray-600">{t.date}</span></div><div className="text-right"><div className="font-bold text-green-600">${t.income.toLocaleString()}</div></div></div><div className="grid grid-cols-2 gap-2 text-sm text-gray-500"><div>付款: {t.franchiseData.payType==='cash'?'現金':t.franchiseData.payType==='install_chailease'?'中租':'現金分期'}</div><div>器材: {t.franchiseData.equipDate||'未定'}</div><div>冷凍: {t.franchiseData.frozenDate||'未定'}</div></div>{!isReadonly && <button onClick={(e)=>{e.stopPropagation(); onDelete(t.id, t.type)}} className="absolute top-2 right-2 text-gray-300 hover:text-red-500 p-2"><i className="fa-solid fa-trash-can"></i></button>}</div>))}
+                            {selectedFranchiseId && trackerData && (<div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-[60]"><div className="bg-white p-6 w-full max-w-lg rounded-xl shadow-2xl overflow-y-auto max-h-[90vh]"><div className="flex justify-between items-center mb-4 border-b pb-2"><h3 className="font-bold text-xl">追蹤: {trackerData.fName}</h3><button onClick={()=>setSelectedFranchiseId(null)} className="text-gray-400 hover:text-gray-600">x</button></div><div className={`space-y-6 ${isReadonly ? 'readonly-mode' : ''}`}><div className="bg-blue-50 p-3 rounded border border-blue-100"><h4 className="font-bold text-sm text-blue-700 mb-2">出貨進度補登</h4><div className="grid grid-cols-2 gap-4"><div><label className="text-xs font-bold text-gray-500">器材/常溫</label><input type="date" value={trackerData.equipDate} onChange={e=>setTrackerData({...trackerData, equipDate:e.target.value})} className="border p-2 w-full rounded bg-white"/></div><div><label className="text-xs font-bold text-blue-500">冷凍出貨</label><input type="date" value={trackerData.frozenDate} onChange={e=>setTrackerData({...trackerData, frozenDate:e.target.value})} className="border p-2 w-full rounded bg-white"/></div></div></div><div className="bg-red-50 p-3 rounded border border-red-100"><div className="flex justify-between items-center mb-2"><h4 className="font-bold text-sm text-red-700">開辦費補登</h4><span className={`text-xs ${trackerSetupTotal > settings.constants.setupBudget ? 'text-red-600 font-bold' : 'text-green-600'}`}>{trackerSetupTotal > settings.constants.setupBudget ? `已超支` : `剩餘 $${(settings.constants.setupBudget-trackerSetupTotal).toLocaleString()}`}</span></div><div className="flex gap-2 mb-2"><input type="text" placeholder="項目" value={newTrackerExpName} onChange={e=>setNewTrackerExpName(e.target.value)} className="border p-2 flex-1 rounded text-sm"/><input type="number" placeholder="金額" className="w-20 border p-2 rounded text-sm" value={newTrackerExpAmount} onChange={e=>setNewTrackerExpAmount(e.target.value)}/><button onClick={addTrackerExpense} className="bg-red-500 text-white px-3 rounded text-sm font-bold">新增</button></div><div className="max-h-32 overflow-y-auto text-sm bg-white border p-1 rounded">{(trackerData.setupExpenses||[]).map((exp, idx) => (<div key={idx} className="flex justify-between py-1 border-b border-gray-100 px-2"><span>{exp.name}</span><span>${exp.amount.toLocaleString()}</span></div>))}</div></div></div><div className="flex gap-3 mt-6">{!isReadonly && <button onClick={saveTrackerChanges} className="flex-1 bg-indigo-600 text-white py-3 rounded-lg font-bold">儲存變更</button>}<button onClick={()=>setSelectedFranchiseId(null)} className="flex-1 bg-gray-200 text-gray-700 py-3 rounded-lg font-bold">取消關閉</button></div></div></div>)}
                         </div>
                     )}
                 </div>
@@ -1046,346 +651,60 @@
 
         const ReportTab = ({ transactions, onDelete, items, role }) => {
             const isReadonly = role === ROLES.VIEWER;
-            const [viewMode, setViewMode] = useState('dashboard'); 
-            const [reportCategory, setReportCategory] = useState('all'); 
-
-            const [start, setStart] = useState(moment().startOf('month').format('YYYY-MM-DD'));
-            const [end, setEnd] = useState(moment().endOf('month').format('YYYY-MM-DD'));
-            const [filterType, setFilterType] = useState('all');
-            const expenseChartRef = useRef(null); const franchiseChartRef = useRef(null);
-            const expenseChart = useRef(null); const franchiseChart = useRef(null);
-
+            const [viewMode, setViewMode] = useState('dashboard'); const [reportCategory, setReportCategory] = useState('all'); const [start, setStart] = useState(moment().startOf('month').format('YYYY-MM-DD')); const [end, setEnd] = useState(moment().endOf('month').format('YYYY-MM-DD')); const [filterType, setFilterType] = useState('all');
+            const expenseChartRef = useRef(null); const franchiseChartRef = useRef(null); const expenseChart = useRef(null); const franchiseChart = useRef(null);
             const allTransInRange = useMemo(() => transactions.filter(t => moment(t.date).isBetween(start, end, 'day', '[]')), [transactions, start, end]);
-            const displayTrans = useMemo(() => {
-                let list = allTransInRange;
-                if(filterType !== 'all') {
-                    if (filterType === 'order') list = list.filter(t => t.type === '出貨');
-                    else if (filterType === 'transfer') list = list.filter(t => t.type === '調撥');
-                    else if (filterType === 'stockIn') list = list.filter(t => t.type === '進貨/支出' || t.type === '庫存校正');
-                    else if (filterType === 'franchise') list = list.filter(t => t.type === '加盟');
-                }
-                return list.sort((a, b) => b.id - a.id);
-            }, [allTransInRange, filterType]);
-
-            const stats = useMemo(() => {
-                let s = { shipmentRev: 0, shipmentCost: 0, shipmentMargin: 0, transferCost: 0, franchiseRev: 0, franchiseCost: 0, franchiseProfit: 0, franchiseTaxTotal: 0, expenses: 0, directStoreSales: 0, directStoreExp: 0, directStoreCost: 0, directStoreNet: 0 };
-                allTransInRange.forEach(t => {
-                    if (t.type === '出貨') { s.shipmentRev += t.income; s.shipmentCost += t.cost; } 
-                    else if (t.type === '調撥') { s.transferCost += t.cost; }
-                    else if (t.type === '加盟') { s.franchiseRev += t.income; s.franchiseCost += t.cost; s.franchiseProfit += t.profit; if(t.franchiseData && t.franchiseData.chaileaseTax) { s.franchiseTaxTotal += t.franchiseData.chaileaseTax; } } 
-                    else if (t.type === '進貨/支出') { if (t.rawExpenses > 0) { s.expenses += t.rawExpenses; } else { const match = t.content.match(/雜支:.*?\$([\d,]+)/); if (match) s.expenses += parseFloat(match[1].replace(/,/g, '')); } } 
-                    else if (t.type === '直營報表') { s.directStoreSales += t.income; const expense = t.rawExpenses || 0; const cogs = t.cost - expense; s.directStoreExp += expense; s.directStoreCost += cogs; }
-                });
-                s.shipmentMargin = s.shipmentRev - s.shipmentCost; s.directStoreNet = s.directStoreSales - (s.directStoreExp + s.directStoreCost); return s;
-            }, [allTransInRange]);
-
+            const displayTrans = useMemo(() => { let list = allTransInRange; if(filterType !== 'all') { if (filterType === 'order') list = list.filter(t => t.type === '出貨'); else if (filterType === 'transfer') list = list.filter(t => t.type === '調撥'); else if (filterType === 'stockIn') list = list.filter(t => t.type === '進貨/支出' || t.type === '庫存校正'); else if (filterType === 'franchise') list = list.filter(t => t.type === '加盟'); } return list.sort((a, b) => b.id - a.id); }, [allTransInRange, filterType]);
+            const stats = useMemo(() => { let s = { shipmentRev: 0, shipmentCost: 0, shipmentMargin: 0, transferCost: 0, franchiseRev: 0, franchiseCost: 0, franchiseProfit: 0, franchiseTaxTotal: 0, expenses: 0, directStoreSales: 0, directStoreExp: 0, directStoreCost: 0, directStoreNet: 0 }; allTransInRange.forEach(t => { if (t.type === '出貨') { s.shipmentRev += t.income; s.shipmentCost += t.cost; } else if (t.type === '調撥') { s.transferCost += t.cost; } else if (t.type === '加盟') { s.franchiseRev += t.income; s.franchiseCost += t.cost; s.franchiseProfit += t.profit; if(t.franchiseData && t.franchiseData.chaileaseTax) { s.franchiseTaxTotal += t.franchiseData.chaileaseTax; } } else if (t.type === '進貨/支出') { if (t.rawExpenses > 0) { s.expenses += t.rawExpenses; } else { const match = t.content.match(/雜支:.*?\$([\d,]+)/); if (match) s.expenses += parseFloat(match[1].replace(/,/g, '')); } } else if (t.type === '直營報表') { s.directStoreSales += t.income; const expense = t.rawExpenses || 0; const cogs = t.cost - expense; s.directStoreExp += expense; s.directStoreCost += cogs; } }); s.shipmentMargin = s.shipmentRev - s.shipmentCost; s.directStoreNet = s.directStoreSales - (s.directStoreExp + s.directStoreCost); return s; }, [allTransInRange]);
             const companyNetProfit = (stats.shipmentRev + stats.franchiseRev + stats.directStoreSales) - (stats.shipmentCost + stats.franchiseCost + stats.transferCost + stats.expenses + stats.directStoreExp + stats.directStoreCost);
-            
-            const monthlyData = useMemo(() => {
-                const grouped = {};
-                const totals = {
-                    shipment: { rev: 0, cost: 0, profit: 0 },
-                    direct: { rev: 0, cost: 0, profit: 0 },
-                    franchise: { rev: 0, cost: 0, profit: 0 }
-                };
-
-                allTransInRange.forEach(t => {
-                    const month = moment(t.date).format('YYYY-MM');
-                    if (!grouped[month]) {
-                        grouped[month] = {
-                            shipment: { rev: 0, cost: 0, profit: 0, items: [] },
-                            direct: { rev: 0, cost: 0, profit: 0, items: [] },
-                            franchise: { rev: 0, cost: 0, profit: 0, items: [] }
-                        };
-                    }
-
-                    if (t.type === '出貨') {
-                        grouped[month].shipment.rev += t.income;
-                        grouped[month].shipment.cost += t.cost;
-                        grouped[month].shipment.profit += t.profit;
-                        grouped[month].shipment.items.push({ date: t.date, title: t.franchise, rev: t.income, cost: t.cost, profit: t.profit });
-                        totals.shipment.rev += t.income;
-                        totals.shipment.cost += t.cost;
-                        totals.shipment.profit += t.profit;
-                    } else if (t.type === '直營報表') {
-                        grouped[month].direct.rev += t.income;
-                        const expense = t.rawExpenses || 0;
-                        const cogs = t.cost - expense;
-                        const totalCost = expense + cogs;
-                        grouped[month].direct.cost += totalCost;
-                        grouped[month].direct.profit += (t.income - totalCost);
-                        grouped[month].direct.items.push({ date: t.date, title: '湳雅直營店', rev: t.income, cost: totalCost, profit: (t.income - totalCost) });
-                        totals.direct.rev += t.income;
-                        totals.direct.cost += totalCost;
-                        totals.direct.profit += (t.income - totalCost);
-                    } else if (t.type === '加盟') {
-                        grouped[month].franchise.rev += t.income;
-                        grouped[month].franchise.cost += t.cost;
-                        grouped[month].franchise.profit += t.profit;
-                        grouped[month].franchise.items.push({ date: t.date, title: t.franchise, rev: t.income, cost: t.cost, profit: t.profit });
-                        totals.franchise.rev += t.income;
-                        totals.franchise.cost += t.cost;
-                        totals.franchise.profit += t.profit;
-                    }
-                });
-
-                return {
-                    months: Object.keys(grouped).sort((a,b) => b.localeCompare(a)),
-                    grouped,
-                    totals
-                };
-            }, [allTransInRange]);
-
-            const getGrandTotal = () => {
-                let rev = 0, cost = 0, profit = 0;
-                if (reportCategory === 'all' || reportCategory === 'shipment') {
-                    rev += monthlyData.totals.shipment.rev; cost += monthlyData.totals.shipment.cost; profit += monthlyData.totals.shipment.profit;
-                }
-                if (reportCategory === 'all' || reportCategory === 'direct') {
-                    rev += monthlyData.totals.direct.rev; cost += monthlyData.totals.direct.cost; profit += monthlyData.totals.direct.profit;
-                }
-                if (reportCategory === 'all' || reportCategory === 'franchise') {
-                    rev += monthlyData.totals.franchise.rev; cost += monthlyData.totals.franchise.cost; profit += monthlyData.totals.franchise.profit;
-                }
-                return { rev, cost, profit };
-            };
-
-            const exportToCSV = () => {
-                let csvContent = "\uFEFF月份,日期,類型,對象,營收(收入),成本(支出),淨利\n";
-                monthlyData.months.forEach(month => {
-                    const mData = monthlyData.grouped[month];
-                    if (reportCategory === 'all' || reportCategory === 'shipment') {
-                        mData.shipment.items.forEach(it => {
-                            csvContent += `${month},${it.date},出貨,${it.title || '-'},${it.rev},${it.cost},${it.profit}\n`;
-                        });
-                    }
-                    if (reportCategory === 'all' || reportCategory === 'direct') {
-                        mData.direct.items.forEach(it => {
-                            csvContent += `${month},${it.date},直營,${it.title},${it.rev},${it.cost},${it.profit}\n`;
-                        });
-                    }
-                    if (reportCategory === 'all' || reportCategory === 'franchise') {
-                        mData.franchise.items.forEach(it => {
-                            csvContent += `${month},${it.date},加盟,${it.title || '-'},${it.rev},${it.cost},${it.profit}\n`;
-                        });
-                    }
-                });
-                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-                const link = document.createElement("a");
-                const url = URL.createObjectURL(blob);
-                link.setAttribute("href", url);
-                const safeStart = start.replace(/-/g, '');
-                const safeEnd = end.replace(/-/g, '');
-                link.setAttribute("download", `區間報表_${safeStart}_至_${safeEnd}.csv`);
-                link.style.visibility = 'hidden';
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-            };
-
-            const expenseBreakdown = useMemo(() => {
-                const map = {};
-                allTransInRange.forEach(t => {
-                    if (t.type === '進貨/支出') { const match = t.content.match(/【其他費用】\n(.*?): \$([\d,]+)/); if (match) { const name = match[1].trim(); if (!name.includes('加盟器材')) { map[name] = (map[name] || 0) + parseFloat(match[2].replace(/,/g, '')); } } else if (t.content.match(/雜支: (.*?) \$([\d,]+)/)) { const m = t.content.match(/雜支: (.*?) \$([\d,]+)/); map[m[1]] = (map[m[1]] || 0) + parseFloat(m[2].replace(/,/g, '')); } } 
-                    else if (t.type === '直營報表' && t.rawExpenses > 0) map['直營店-營運支出'] = (map['直營店-營運支出'] || 0) + t.rawExpenses; 
-                    else if (t.type === '加盟' && t.franchiseData) { if (t.franchiseData.setupExpenses) t.franchiseData.setupExpenses.forEach(e => map['加盟開辦費'] = (map['加盟開辦費'] || 0) + e.amount); if (t.franchiseData.starterCost > 0) map['加盟-贈品成本'] = (map['加盟-贈品成本'] || 0) + t.franchiseData.starterCost; if (t.franchiseData.chaileaseTax > 0) map['加盟-隱形稅額'] = (map['加盟-隱形稅額'] || 0) + t.franchiseData.chaileaseTax; if (t.franchiseData.chaileaseFee > 0) map['加盟-中租手續費'] = (map['加盟-中租手續費'] || 0) + t.franchiseData.chaileaseFee; } 
-                    else if (t.type === '出貨' && Number(t.shipping) > 0) map['物流運費成本'] = (map['物流運費成本'] || 0) + Number(t.shipping);
-                });
-                return map;
-            }, [allTransInRange]);
-
-            const frozenStats = useMemo(() => {
-                const targetIds = ['cut', 'squid', 'shrimp', 'burdock']; const totalQty = { 'cut': 0, 'squid': 0, 'shrimp': 0, 'burdock': 0 }; const franchiseMap = {};
-                allTransInRange.forEach(t => { if(t.type === '出貨' && t.franchise && t.franchise !== '湳雅直營店' && t.rawItems) { if(!franchiseMap[t.franchise]) franchiseMap[t.franchise] = { cut:0, squid:0, shrimp:0, burdock:0 }; t.rawItems.forEach(item => { if(targetIds.includes(item.id)) { totalQty[item.id] += item.qty; franchiseMap[t.franchise][item.id] += (item.qty * item.price); } }); } });
-                return { totalQty, franchiseMap };
-            }, [allTransInRange]);
-
-            useEffect(() => {
-                if(viewMode === 'dashboard') {
-                    if(expenseChart.current) expenseChart.current.destroy(); if(franchiseChart.current) franchiseChart.current.destroy();
-                    if (expenseChartRef.current) expenseChart.current = new Chart(expenseChartRef.current, { type: 'pie', data: { labels: Object.keys(expenseBreakdown), datasets: [{ data: Object.values(expenseBreakdown), backgroundColor: ['#ef4444', '#f97316', '#eab308', '#84cc16', '#06b6d4', '#6366f1'] }] }, options: { plugins: { title: { display: true, text: '公司總支出分布' }, legend: { position: 'bottom' } } } });
-                    if (franchiseChartRef.current) { const franchises = Object.keys(frozenStats.franchiseMap); franchiseChart.current = new Chart(franchiseChartRef.current, { type: 'bar', data: { labels: franchises, datasets: [ { label: '花枝($)', data: franchises.map(f => frozenStats.franchiseMap[f].cut), backgroundColor: '#3b82f6', stack:'0' }, { label: '墨魚($)', data: franchises.map(f => frozenStats.franchiseMap[f].squid), backgroundColor: '#1d4ed8', stack:'0' }, { label: '蝦球($)', data: franchises.map(f => frozenStats.franchiseMap[f].shrimp), backgroundColor: '#60a5fa', stack:'0' }, { label: '牛蒡($)', data: franchises.map(f => frozenStats.franchiseMap[f].burdock), backgroundColor: '#93c5fd', stack:'0' } ] }, options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { title: { display: true, text: '各加盟店四大冷凍品進貨金額' }, legend: { position: 'bottom' } } } }); }
-                }
-            }, [expenseBreakdown, frozenStats, viewMode]);
-
+            const monthlyData = useMemo(() => { const grouped = {}; const totals = { shipment: { rev: 0, cost: 0, profit: 0 }, direct: { rev: 0, cost: 0, profit: 0 }, franchise: { rev: 0, cost: 0, profit: 0 } }; allTransInRange.forEach(t => { const month = moment(t.date).format('YYYY-MM'); if (!grouped[month]) { grouped[month] = { shipment: { rev: 0, cost: 0, profit: 0, items: [] }, direct: { rev: 0, cost: 0, profit: 0, items: [] }, franchise: { rev: 0, cost: 0, profit: 0, items: [] } }; } if (t.type === '出貨') { grouped[month].shipment.rev += t.income; grouped[month].shipment.cost += t.cost; grouped[month].shipment.profit += t.profit; grouped[month].shipment.items.push({ date: t.date, title: t.franchise, rev: t.income, cost: t.cost, profit: t.profit }); totals.shipment.rev += t.income; totals.shipment.cost += t.cost; totals.shipment.profit += t.profit; } else if (t.type === '直營報表') { grouped[month].direct.rev += t.income; const expense = t.rawExpenses || 0; const cogs = t.cost - expense; const totalCost = expense + cogs; grouped[month].direct.cost += totalCost; grouped[month].direct.profit += (t.income - totalCost); grouped[month].direct.items.push({ date: t.date, title: '湳雅直營店', rev: t.income, cost: totalCost, profit: (t.income - totalCost) }); totals.direct.rev += t.income; totals.direct.cost += totalCost; totals.direct.profit += (t.income - totalCost); } else if (t.type === '加盟') { grouped[month].franchise.rev += t.income; grouped[month].franchise.cost += t.cost; grouped[month].franchise.profit += t.profit; grouped[month].franchise.items.push({ date: t.date, title: t.franchise, rev: t.income, cost: t.cost, profit: t.profit }); totals.franchise.rev += t.income; totals.franchise.cost += t.cost; totals.franchise.profit += t.profit; } }); return { months: Object.keys(grouped).sort((a,b) => b.localeCompare(a)), grouped, totals }; }, [allTransInRange]);
+            const getGrandTotal = () => { let rev = 0, cost = 0, profit = 0; if (reportCategory === 'all' || reportCategory === 'shipment') { rev += monthlyData.totals.shipment.rev; cost += monthlyData.totals.shipment.cost; profit += monthlyData.totals.shipment.profit; } if (reportCategory === 'all' || reportCategory === 'direct') { rev += monthlyData.totals.direct.rev; cost += monthlyData.totals.direct.cost; profit += monthlyData.totals.direct.profit; } if (reportCategory === 'all' || reportCategory === 'franchise') { rev += monthlyData.totals.franchise.rev; cost += monthlyData.totals.franchise.cost; profit += monthlyData.totals.franchise.profit; } return { rev, cost, profit }; };
+            const exportToCSV = () => { let csvContent = "\uFEFF月份,日期,類型,對象,營收(收入),成本(支出),淨利\n"; monthlyData.months.forEach(month => { const mData = monthlyData.grouped[month]; if (reportCategory === 'all' || reportCategory === 'shipment') { mData.shipment.items.forEach(it => { csvContent += `${month},${it.date},出貨,${it.title || '-'},${it.rev},${it.cost},${it.profit}\n`; }); } if (reportCategory === 'all' || reportCategory === 'direct') { mData.direct.items.forEach(it => { csvContent += `${month},${it.date},直營,${it.title},${it.rev},${it.cost},${it.profit}\n`; }); } if (reportCategory === 'all' || reportCategory === 'franchise') { mData.franchise.items.forEach(it => { csvContent += `${month},${it.date},加盟,${it.title || '-'},${it.rev},${it.cost},${it.profit}\n`; }); } }); const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' }); const link = document.createElement("a"); const url = URL.createObjectURL(blob); link.setAttribute("href", url); const safeStart = start.replace(/-/g, ''); const safeEnd = end.replace(/-/g, ''); link.setAttribute("download", `區間報表_${safeStart}_至_${safeEnd}.csv`); link.style.visibility = 'hidden'; document.body.appendChild(link); link.click(); document.body.removeChild(link); };
+            const expenseBreakdown = useMemo(() => { const map = {}; allTransInRange.forEach(t => { if (t.type === '進貨/支出') { const match = t.content.match(/【其他費用】\n(.*?): \$([\d,]+)/); if (match) { const name = match[1].trim(); if (!name.includes('加盟器材')) { map[name] = (map[name] || 0) + parseFloat(match[2].replace(/,/g, '')); } } else if (t.content.match(/雜支: (.*?) \$([\d,]+)/)) { const m = t.content.match(/雜支: (.*?) \$([\d,]+)/); map[m[1]] = (map[m[1]] || 0) + parseFloat(m[2].replace(/,/g, '')); } } else if (t.type === '直營報表' && t.rawExpenses > 0) map['直營店-營運支出'] = (map['直營店-營運支出'] || 0) + t.rawExpenses; else if (t.type === '加盟' && t.franchiseData) { if (t.franchiseData.setupExpenses) t.franchiseData.setupExpenses.forEach(e => map['加盟開辦費'] = (map['加盟開辦費'] || 0) + e.amount); if (t.franchiseData.starterCost > 0) map['加盟-贈品成本'] = (map['加盟-贈品成本'] || 0) + t.franchiseData.starterCost; if (t.franchiseData.chaileaseTax > 0) map['加盟-隱形稅額'] = (map['加盟-隱形稅額'] || 0) + t.franchiseData.chaileaseTax; if (t.franchiseData.chaileaseFee > 0) map['加盟-中租手續費'] = (map['加盟-中租手續費'] || 0) + t.franchiseData.chaileaseFee; } else if (t.type === '出貨' && Number(t.shipping) > 0) map['物流運費成本'] = (map['物流運費成本'] || 0) + Number(t.shipping); }); return map; }, [allTransInRange]);
+            const frozenStats = useMemo(() => { const targetIds = ['cut', 'squid', 'shrimp', 'burdock']; const totalQty = { 'cut': 0, 'squid': 0, 'shrimp': 0, 'burdock': 0 }; const franchiseMap = {}; allTransInRange.forEach(t => { if(t.type === '出貨' && t.franchise && t.franchise !== '湳雅直營店' && t.rawItems) { if(!franchiseMap[t.franchise]) franchiseMap[t.franchise] = { cut:0, squid:0, shrimp:0, burdock:0 }; t.rawItems.forEach(item => { if(targetIds.includes(item.id)) { totalQty[item.id] += item.qty; franchiseMap[t.franchise][item.id] += (item.qty * item.price); } }); } }); return { totalQty, franchiseMap }; }, [allTransInRange]);
+            useEffect(() => { if(viewMode === 'dashboard') { if(expenseChart.current) expenseChart.current.destroy(); if(franchiseChart.current) franchiseChart.current.destroy(); if (expenseChartRef.current) expenseChart.current = new Chart(expenseChartRef.current, { type: 'pie', data: { labels: Object.keys(expenseBreakdown), datasets: [{ data: Object.values(expenseBreakdown), backgroundColor: ['#ef4444', '#f97316', '#eab308', '#84cc16', '#06b6d4', '#6366f1'] }] }, options: { plugins: { title: { display: true, text: '公司總支出分布' }, legend: { position: 'bottom' } } } }); if (franchiseChartRef.current) { const franchises = Object.keys(frozenStats.franchiseMap); franchiseChart.current = new Chart(franchiseChartRef.current, { type: 'bar', data: { labels: franchises, datasets: [ { label: '花枝($)', data: franchises.map(f => frozenStats.franchiseMap[f].cut), backgroundColor: '#3b82f6', stack:'0' }, { label: '墨魚($)', data: franchises.map(f => frozenStats.franchiseMap[f].squid), backgroundColor: '#1d4ed8', stack:'0' }, { label: '蝦球($)', data: franchises.map(f => frozenStats.franchiseMap[f].shrimp), backgroundColor: '#60a5fa', stack:'0' }, { label: '牛蒡($)', data: franchises.map(f => frozenStats.franchiseMap[f].burdock), backgroundColor: '#93c5fd', stack:'0' } ] }, options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { title: { display: true, text: '各加盟店四大冷凍品進貨金額' }, legend: { position: 'bottom' } } } }); } } }, [expenseBreakdown, frozenStats, viewMode]);
             return (
                 <div className="space-y-6">
-                    <div className="flex space-x-2 border-b mb-4">
-                        <button onClick={()=>setViewMode('dashboard')} className={`pb-2 px-4 ${viewMode==='dashboard'?'border-b-2 border-indigo-600 font-bold text-indigo-600':'text-gray-500'}`}>總覽儀表板</button>
-                        <button onClick={()=>setViewMode('monthly')} className={`pb-2 px-4 ${viewMode==='monthly'?'border-b-2 border-indigo-600 font-bold text-indigo-600':'text-gray-500'}`}>區間月結報表</button>
-                    </div>
-                    <div className="bg-white p-4 rounded shadow flex items-center gap-4">
-                        <h2 className="font-bold">區間選擇</h2>
-                        <input type="date" value={start} onChange={e => setStart(e.target.value)} className="border p-1 rounded" />
-                        <span>to</span>
-                        <input type="date" value={end} onChange={e => setEnd(e.target.value)} className="border p-1 rounded" />
-                    </div>
+                    <div className="flex space-x-2 border-b mb-4"><button onClick={()=>setViewMode('dashboard')} className={`pb-2 px-4 ${viewMode==='dashboard'?'border-b-2 border-indigo-600 font-bold text-indigo-600':'text-gray-500'}`}>總覽儀表板</button><button onClick={()=>setViewMode('monthly')} className={`pb-2 px-4 ${viewMode==='monthly'?'border-b-2 border-indigo-600 font-bold text-indigo-600':'text-gray-500'}`}>月結報表</button></div>
+                    <div className="bg-white p-4 rounded shadow flex items-center gap-4"><h2 className="font-bold">區間選擇</h2><input type="date" value={start} onChange={e => setStart(e.target.value)} className="border p-1 rounded" /><span>to</span><input type="date" value={end} onChange={e => setEnd(e.target.value)} className="border p-1 rounded" /></div>
                     {viewMode === 'dashboard' ? (
                         <div className="space-y-6 animate-fade-in">
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                                 <div className="bg-blue-50 p-3 rounded shadow border-l-4 border-blue-500"><div className="text-xs text-gray-500 font-bold mb-1">加盟出貨</div><div className="flex justify-between items-baseline"><span className="text-xs text-gray-400">總計</span><span className="text-lg font-bold text-blue-700">${stats.shipmentRev.toLocaleString()}</span></div><div className="flex justify-between items-baseline"><span className="text-xs text-gray-400">毛利</span><span className="text-sm font-bold text-green-600">+${stats.shipmentMargin.toLocaleString()}</span></div></div>
                                 <div className="bg-cyan-50 p-3 rounded shadow border-l-4 border-cyan-500"><div className="text-xs text-gray-500 font-bold mb-1">直營店 (湳雅)</div><div className="flex justify-between items-baseline"><span className="text-xs text-gray-400">業績</span><span className="text-lg font-bold text-cyan-700">${stats.directStoreSales.toLocaleString()}</span></div><div className="flex justify-between items-baseline"><span className="text-xs text-gray-400">總支出</span><span className="text-sm text-red-400">-${(stats.directStoreExp + stats.directStoreCost).toLocaleString()}</span></div><div className="border-t border-cyan-200 mt-1 pt-1 flex justify-between"><span className="text-xs font-bold">淨利</span><span className={`text-sm font-bold ${stats.directStoreNet>=0?'text-green-600':'text-red-600'}`}>${stats.directStoreNet.toLocaleString()}</span></div></div>
                                 <div className="bg-indigo-50 p-3 rounded shadow border-l-4 border-indigo-500"><div className="text-xs text-gray-500 font-bold mb-1">加盟開通</div><div className="flex justify-between items-baseline"><span className="text-xs text-gray-400">收入</span><span className="text-lg font-bold text-indigo-700">${stats.franchiseRev.toLocaleString()}</span></div><div className="flex justify-between items-baseline"><span className="text-xs text-gray-400">成本</span><span className="text-sm text-red-400">-${stats.franchiseCost.toLocaleString()}</span></div>{stats.franchiseTaxTotal > 0 && <div className="text-[10px] text-red-500 font-bold text-right mt-1">含發票稅額: ${stats.franchiseTaxTotal.toLocaleString()}</div>}<div className="border-t border-indigo-200 mt-1 pt-1 flex justify-between"><span className="text-xs font-bold">損益</span><span className="text-sm font-bold text-indigo-600">+${stats.franchiseProfit.toLocaleString()}</span></div></div>
-                                <div className="bg-yellow-50 p-3 rounded shadow border-l-4 border-yellow-500 flex flex-col justify-center"><div className="text-xs text-gray-500 font-bold mb-2">公司總淨利 (Net Profit)</div><div className={`text-2xl font-bold ${companyNetProfit>=0?'text-yellow-700':'text-red-600'}`}>${companyNetProfit.toLocaleString()}</div><div className="text-[10px] text-gray-400 mt-1">扣除調撥/營運雜支/直營成本</div></div>
+                                <div className="bg-yellow-50 p-3 rounded shadow border-l-4 border-yellow-500 flex flex-col justify-center"><div className="text-xs text-gray-500 font-bold mb-2">公司總淨利</div><div className={`text-2xl font-bold ${companyNetProfit>=0?'text-yellow-700':'text-red-600'}`}>${companyNetProfit.toLocaleString()}</div></div>
                             </div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div className="bg-white p-4 rounded shadow h-[350px]"><canvas ref={expenseChartRef}></canvas></div>
-                                <div className="bg-white p-4 rounded shadow h-[350px] flex flex-col"><div className="flex gap-2 text-xs font-bold text-gray-500 mb-2 justify-center bg-gray-50 p-2 rounded"><span>花枝: {frozenStats.totalQty.cut}箱</span><span>墨魚: {frozenStats.totalQty.squid}箱</span><span>蝦球: {frozenStats.totalQty.shrimp}箱</span><span>牛蒡: {frozenStats.totalQty.burdock}箱</span></div><div className="flex-1 relative"><canvas ref={franchiseChartRef}></canvas></div></div>
-                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4"><div className="bg-white p-4 rounded shadow h-[350px]"><canvas ref={expenseChartRef}></canvas></div><div className="bg-white p-4 rounded shadow h-[350px] flex flex-col"><div className="flex gap-2 text-xs font-bold text-gray-500 mb-2 justify-center bg-gray-50 p-2 rounded"><span>花枝: {frozenStats.totalQty.cut}箱</span><span>墨魚: {frozenStats.totalQty.squid}箱</span><span>蝦球: {frozenStats.totalQty.shrimp}箱</span><span>牛蒡: {frozenStats.totalQty.burdock}箱</span></div><div className="flex-1 relative"><canvas ref={franchiseChartRef}></canvas></div></div></div>
                             <div className="bg-white p-4 rounded shadow">
-                                <div className="flex justify-between items-center mb-4 border-b pb-2">
-                                    <h3 className="font-bold text-gray-700">交易流水帳</h3>
-                                    <select value={filterType} onChange={e=>setFilterType(e.target.value)} className="border p-1 rounded text-sm"><option value="all">全部顯示</option><option value="order">出貨紀錄</option><option value="transfer">調撥紀錄</option><option value="stockIn">進貨/支出</option><option value="franchise">加盟開通</option></select>
-                                </div>
+                                <div className="flex justify-between items-center mb-4 border-b pb-2"><h3 className="font-bold text-gray-700">交易流水帳</h3><select value={filterType} onChange={e=>setFilterType(e.target.value)} className="border p-1 rounded text-sm"><option value="all">全部顯示</option><option value="order">出貨紀錄</option><option value="transfer">調撥紀錄</option><option value="stockIn">進貨/支出</option><option value="franchise">加盟開通</option></select></div>
                                 <div className="space-y-2 max-h-[500px] overflow-y-auto">
-                                    {displayTrans.map(t => (
-                                        <div key={t.id} className="border rounded p-3 text-sm relative hover:bg-gray-50">
-                                            <div className="flex justify-between font-bold mb-1">
-                                                <span className="flex items-center gap-2">
-                                                    <span className={`px-2 py-0.5 rounded text-white text-xs ${t.type==='出貨'?'bg-blue-500':t.type==='直營報表'?'bg-cyan-500':t.type==='加盟'?'bg-indigo-500':t.type==='進貨/支出'?'bg-red-500':'bg-gray-500'}`}>{t.type}</span>
-                                                    <span>{t.date}</span>
-                                                    <span className="text-gray-600">- {t.franchise}</span>
-                                                    {t.createdBy && <span className="text-[10px] text-gray-400 ml-2">({t.createdBy.split('@')[0]})</span>}
-                                                </span>
-                                                <span className={t.total < 0 ? 'text-red-500' : 'text-green-600'}>${t.total?.toLocaleString()}</span>
-                                            </div>
-                                            <pre className="text-xs text-gray-500 whitespace-pre-wrap font-sans bg-gray-100 p-2 rounded">{t.content}</pre>
-                                            {!isReadonly && <button onClick={() => onDelete(t.id, t.type)} className="absolute top-3 right-3 text-gray-300 hover:text-red-500"><i className="fa-solid fa-trash"></i></button>}
-                                        </div>
-                                    ))}
+                                    {displayTrans.map(t => (<div key={t.id} className="border rounded p-3 text-sm relative hover:bg-gray-50"><div className="flex justify-between font-bold mb-1"><span className="flex items-center gap-2"><span className={`px-2 py-0.5 rounded text-white text-xs ${t.type==='出貨'?'bg-blue-500':t.type==='直營報表'?'bg-cyan-500':t.type==='加盟'?'bg-indigo-500':t.type==='進貨/支出'?'bg-red-500':'bg-gray-500'}`}>{t.type}</span><span>{t.date}</span><span className="text-gray-600">- {t.franchise}</span></span><span className={t.total < 0 ? 'text-red-500' : 'text-green-600'}>${t.total?.toLocaleString()}</span></div><pre className="text-xs text-gray-500 whitespace-pre-wrap font-sans bg-gray-100 p-2 rounded">{t.content}</pre>{!isReadonly && <button onClick={() => onDelete(t.id, t.type)} className="absolute top-3 right-3 text-gray-300 hover:text-red-500"><i className="fa-solid fa-trash"></i></button>}</div>))}
                                 </div>
                             </div>
                         </div>
                     ) : (
                         <div className="bg-white p-4 rounded shadow animate-fade-in">
-                            <div className="flex justify-between items-center mb-4 border-b pb-2">
-                                <h3 className="font-bold text-gray-700">區間月結報表 <span className="text-sm font-normal text-gray-500 ml-2">依照所選日期進行分類與分月呈現</span></h3>
-                                <div className="flex items-center space-x-3">
-                                    <select value={reportCategory} onChange={e=>setReportCategory(e.target.value)} className="border p-1 rounded text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold">
-                                        <option value="all">綜合檢視 (全部)</option>
-                                        <option value="shipment">僅顯示：出貨報表</option>
-                                        <option value="direct">僅顯示：直營報表</option>
-                                        <option value="franchise">僅顯示：加盟開通</option>
-                                    </select>
-                                    <button onClick={exportToCSV} className="bg-green-600 hover:bg-green-700 text-white text-sm px-3 py-1.5 rounded shadow flex items-center transition-colors">
-                                        <i className="fa-solid fa-download mr-1"></i> 匯出 CSV
-                                    </button>
-                                </div>
-                            </div>
+                            <div className="flex justify-between items-center mb-4 border-b pb-2"><h3 className="font-bold text-gray-700">區間月結報表</h3><div className="flex items-center space-x-3"><select value={reportCategory} onChange={e=>setReportCategory(e.target.value)} className="border p-1 rounded text-sm bg-gray-50 font-bold"><option value="all">綜合檢視</option><option value="shipment">出貨報表</option><option value="direct">直營報表</option><option value="franchise">加盟開通</option></select><button onClick={exportToCSV} className="bg-green-600 hover:bg-green-700 text-white text-sm px-3 py-1.5 rounded shadow flex items-center transition-colors"><i className="fa-solid fa-download mr-1"></i> CSV</button></div></div>
                             <div className="bg-slate-50 p-4 rounded-lg border mb-6">
-                                <div className="flex justify-between items-center mb-4">
-                                    <h4 className="font-bold text-slate-700">區間總結算明細 ({start} ~ {end})</h4>
-                                </div>
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                    { (reportCategory === 'all' || reportCategory === 'shipment') && (
-                                        <div className="bg-white p-3 rounded shadow-sm border-l-4 border-blue-500">
-                                            <div className="text-xs font-bold text-gray-500 mb-2">出貨總計</div>
-                                            <div className="flex justify-between"><span className="text-gray-500 text-sm">營收:</span><span className="font-bold text-gray-700">${monthlyData.totals.shipment.rev.toLocaleString()}</span></div>
-                                            <div className="flex justify-between"><span className="text-gray-500 text-sm">成本:</span><span className="font-bold text-red-500">-${monthlyData.totals.shipment.cost.toLocaleString()}</span></div>
-                                            <div className="flex justify-between border-t mt-2 pt-2"><span className="text-gray-500 text-sm font-bold">淨利:</span><span className="font-bold text-blue-600">${monthlyData.totals.shipment.profit.toLocaleString()}</span></div>
-                                        </div>
-                                    )}
-                                    { (reportCategory === 'all' || reportCategory === 'direct') && (
-                                        <div className="bg-white p-3 rounded shadow-sm border-l-4 border-cyan-500">
-                                            <div className="text-xs font-bold text-gray-500 mb-2">直營總計</div>
-                                            <div className="flex justify-between"><span className="text-gray-500 text-sm">營收:</span><span className="font-bold text-gray-700">${monthlyData.totals.direct.rev.toLocaleString()}</span></div>
-                                            <div className="flex justify-between"><span className="text-gray-500 text-sm">成本(含雜支):</span><span className="font-bold text-red-500">-${monthlyData.totals.direct.cost.toLocaleString()}</span></div>
-                                            <div className="flex justify-between border-t mt-2 pt-2"><span className="text-gray-500 text-sm font-bold">淨利:</span><span className={`font-bold ${monthlyData.totals.direct.profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>${monthlyData.totals.direct.profit.toLocaleString()}</span></div>
-                                        </div>
-                                    )}
-                                    { (reportCategory === 'all' || reportCategory === 'franchise') && (
-                                        <div className="bg-white p-3 rounded shadow-sm border-l-4 border-indigo-500">
-                                            <div className="text-xs font-bold text-gray-500 mb-2">加盟開通總計</div>
-                                            <div className="flex justify-between"><span className="text-gray-500 text-sm">營收:</span><span className="font-bold text-gray-700">${monthlyData.totals.franchise.rev.toLocaleString()}</span></div>
-                                            <div className="flex justify-between"><span className="text-gray-500 text-sm">成本(含隱形):</span><span className="font-bold text-red-500">-${monthlyData.totals.franchise.cost.toLocaleString()}</span></div>
-                                            <div className="flex justify-between border-t mt-2 pt-2"><span className="text-gray-500 text-sm font-bold">淨利:</span><span className="font-bold text-indigo-600">${monthlyData.totals.franchise.profit.toLocaleString()}</span></div>
-                                        </div>
-                                    )}
+                                    { (reportCategory === 'all' || reportCategory === 'shipment') && (<div className="bg-white p-3 rounded shadow-sm border-l-4 border-blue-500"><div className="text-xs font-bold text-gray-500 mb-2">出貨總計</div><div className="flex justify-between"><span className="text-gray-500 text-sm">營收:</span><span className="font-bold text-gray-700">${monthlyData.totals.shipment.rev.toLocaleString()}</span></div><div className="flex justify-between border-t mt-2 pt-2"><span className="text-gray-500 text-sm font-bold">淨利:</span><span className="font-bold text-blue-600">${monthlyData.totals.shipment.profit.toLocaleString()}</span></div></div>)}
+                                    { (reportCategory === 'all' || reportCategory === 'direct') && (<div className="bg-white p-3 rounded shadow-sm border-l-4 border-cyan-500"><div className="text-xs font-bold text-gray-500 mb-2">直營總計</div><div className="flex justify-between"><span className="text-gray-500 text-sm">營收:</span><span className="font-bold text-gray-700">${monthlyData.totals.direct.rev.toLocaleString()}</span></div><div className="flex justify-between border-t mt-2 pt-2"><span className="text-gray-500 text-sm font-bold">淨利:</span><span className={`font-bold ${monthlyData.totals.direct.profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>${monthlyData.totals.direct.profit.toLocaleString()}</span></div></div>)}
+                                    { (reportCategory === 'all' || reportCategory === 'franchise') && (<div className="bg-white p-3 rounded shadow-sm border-l-4 border-indigo-500"><div className="text-xs font-bold text-gray-500 mb-2">加盟開通總計</div><div className="flex justify-between"><span className="text-gray-500 text-sm">營收:</span><span className="font-bold text-gray-700">${monthlyData.totals.franchise.rev.toLocaleString()}</span></div><div className="flex justify-between border-t mt-2 pt-2"><span className="text-gray-500 text-sm font-bold">淨利:</span><span className="font-bold text-indigo-600">${monthlyData.totals.franchise.profit.toLocaleString()}</span></div></div>)}
                                 </div>
-                                {(() => {
-                                    const grand = getGrandTotal();
-                                    return (
-                                        <div className="mt-4 p-3 bg-indigo-100 rounded border border-indigo-200 flex flex-col md:flex-row justify-between items-center shadow-inner">
-                                            <span className="font-bold text-indigo-800 mb-2 md:mb-0">
-                                                <i className="fa-solid fa-calculator mr-2"></i>
-                                                選定範圍與項目總結算 ({reportCategory === 'all' ? '出貨+直營+加盟' : reportCategory === 'shipment' ? '出貨' : reportCategory === 'direct' ? '直營' : '加盟'})
-                                            </span>
-                                            <div className="flex space-x-6">
-                                                <span className="text-sm">總營收: <span className="font-bold text-indigo-700 text-base">${grand.rev.toLocaleString()}</span></span>
-                                                <span className="text-sm">總成本: <span className="font-bold text-red-500 text-base">-${grand.cost.toLocaleString()}</span></span>
-                                                <span className="text-sm font-bold bg-white px-2 py-0.5 rounded shadow-sm">
-                                                    總淨利: <span className={`text-base ${grand.profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>${grand.profit.toLocaleString()}</span>
-                                                </span>
-                                            </div>
-                                        </div>
-                                    );
-                                })()}
+                                {(() => { const grand = getGrandTotal(); return (<div className="mt-4 p-3 bg-indigo-100 rounded border border-indigo-200 flex flex-col md:flex-row justify-between items-center shadow-inner"><span className="font-bold text-indigo-800 mb-2 md:mb-0"><i className="fa-solid fa-calculator mr-2"></i>區間總結算</span><div className="flex space-x-6"><span className="text-sm">總營收: <span className="font-bold text-indigo-700 text-base">${grand.rev.toLocaleString()}</span></span><span className="text-sm font-bold bg-white px-2 py-0.5 rounded shadow-sm">總淨利: <span className={`text-base ${grand.profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>${grand.profit.toLocaleString()}</span></span></div></div>); })()}
                             </div>
                             <div className="space-y-4">
-                                <h4 className="font-bold text-gray-700">每月分組明細</h4>
                                 {monthlyData.months.map(month => (
                                     <div key={month} className="border border-gray-200 rounded-lg overflow-hidden shadow-sm">
-                                        <div className="bg-gray-100 p-2 font-bold text-gray-700 border-b flex items-center">
-                                            <i className="fa-regular fa-calendar-alt mr-2 text-gray-500"></i> {month}
-                                        </div>
+                                        <div className="bg-gray-100 p-2 font-bold text-gray-700 border-b flex items-center"><i className="fa-regular fa-calendar-alt mr-2 text-gray-500"></i> {month}</div>
                                         <div className="p-3 bg-white grid grid-cols-1 md:grid-cols-3 gap-6">
-                                            { (reportCategory === 'all' || reportCategory === 'shipment') && (
-                                                <div className="flex flex-col h-full bg-gray-50 p-2 rounded border border-gray-100">
-                                                    <div className="text-xs font-bold text-blue-600 mb-2 pb-1 border-b border-gray-200">出貨報表</div>
-                                                    <div className="text-sm flex justify-between mb-1"><span className="text-gray-500">營收:</span><span className="font-medium">${monthlyData.grouped[month].shipment.rev.toLocaleString()}</span></div>
-                                                    <div className="text-sm flex justify-between mb-1"><span className="text-gray-500">成本:</span><span className="text-red-400">-${monthlyData.grouped[month].shipment.cost.toLocaleString()}</span></div>
-                                                    <div className="text-sm flex justify-between font-bold pt-1 mt-1 border-t border-dashed mb-2"><span className="text-gray-600">淨利:</span><span className="text-blue-600">${monthlyData.grouped[month].shipment.profit.toLocaleString()}</span></div>
-                                                    <div className="flex-1 overflow-y-auto max-h-48 custom-scrollbar space-y-1 pr-1">
-                                                        {monthlyData.grouped[month].shipment.items.map((it, idx) => (
-                                                            <div key={idx} className="bg-white border border-gray-100 p-1.5 rounded flex justify-between items-center shadow-sm hover:bg-blue-50 transition-colors">
-                                                                <div className="w-20"><div className="font-bold text-gray-700 text-xs">{it.date.substring(5)}</div><div className="text-gray-500 truncate w-16 text-[10px]" title={it.title}>{it.title}</div></div>
-                                                                <div className="text-right"><div className="text-blue-600 font-bold text-sm">收 ${it.rev.toLocaleString()}</div><div className="text-[9px] text-gray-400">支 ${it.cost.toLocaleString()} | 淨 ${it.profit.toLocaleString()}</div></div>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            )}
-                                            { (reportCategory === 'all' || reportCategory === 'direct') && (
-                                                <div className="flex flex-col h-full bg-gray-50 p-2 rounded border border-gray-100">
-                                                    <div className="text-xs font-bold text-cyan-600 mb-2 pb-1 border-b border-gray-200">直營報表</div>
-                                                    <div className="text-sm flex justify-between mb-1"><span className="text-gray-500">營收:</span><span className="font-medium">${monthlyData.grouped[month].direct.rev.toLocaleString()}</span></div>
-                                                    <div className="text-sm flex justify-between mb-1"><span className="text-gray-500">成本:</span><span className="text-red-400">-${monthlyData.grouped[month].direct.cost.toLocaleString()}</span></div>
-                                                    <div className="text-sm flex justify-between font-bold pt-1 mt-1 border-t border-dashed mb-2"><span className="text-gray-600">淨利:</span><span className={monthlyData.grouped[month].direct.profit >= 0 ? 'text-green-600' : 'text-red-600'}>${monthlyData.grouped[month].direct.profit.toLocaleString()}</span></div>
-                                                    <div className="flex-1 overflow-y-auto max-h-48 custom-scrollbar space-y-1 pr-1">
-                                                        {monthlyData.grouped[month].direct.items.map((it, idx) => (
-                                                            <div key={idx} className="bg-white border border-gray-100 p-1.5 rounded flex justify-between items-center shadow-sm hover:bg-cyan-50 transition-colors">
-                                                                <div className="w-20"><div className="font-bold text-gray-700 text-xs">{it.date.substring(5)}</div><div className="text-gray-500 truncate w-16 text-[10px]">{it.title}</div></div>
-                                                                <div className="text-right"><div className="text-cyan-600 font-bold text-sm">收 ${it.rev.toLocaleString()}</div><div className="text-[9px] text-gray-400">支 ${it.cost.toLocaleString()} | 淨 ${it.profit.toLocaleString()}</div></div>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            )}
-                                            { (reportCategory === 'all' || reportCategory === 'franchise') && (
-                                                <div className="flex flex-col h-full bg-gray-50 p-2 rounded border border-gray-100">
-                                                    <div className="text-xs font-bold text-indigo-600 mb-2 pb-1 border-b border-gray-200">加盟開通</div>
-                                                    <div className="text-sm flex justify-between mb-1"><span className="text-gray-500">營收:</span><span className="font-medium">${monthlyData.grouped[month].franchise.rev.toLocaleString()}</span></div>
-                                                    <div className="text-sm flex justify-between mb-1"><span className="text-gray-500">成本:</span><span className="text-red-400">-${monthlyData.grouped[month].franchise.cost.toLocaleString()}</span></div>
-                                                    <div className="text-sm flex justify-between font-bold pt-1 mt-1 border-t border-dashed mb-2"><span className="text-gray-600">淨利:</span><span className="text-indigo-600">${monthlyData.grouped[month].franchise.profit.toLocaleString()}</span></div>
-                                                    <div className="flex-1 overflow-y-auto max-h-48 custom-scrollbar space-y-1 pr-1">
-                                                        {monthlyData.grouped[month].franchise.items.map((it, idx) => (
-                                                            <div key={idx} className="bg-white border border-gray-100 p-1.5 rounded flex justify-between items-center shadow-sm hover:bg-indigo-50 transition-colors">
-                                                                <div className="w-20"><div className="font-bold text-gray-700 text-xs">{it.date.substring(5)}</div><div className="text-gray-500 truncate w-16 text-[10px]" title={it.title}>{it.title}</div></div>
-                                                                <div className="text-right"><div className="text-indigo-600 font-bold text-sm">收 ${it.rev.toLocaleString()}</div><div className="text-[9px] text-gray-400">支 ${it.cost.toLocaleString()} | 淨 ${it.profit.toLocaleString()}</div></div>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            )}
+                                            { (reportCategory === 'all' || reportCategory === 'shipment') && (<div className="flex flex-col bg-gray-50 p-2 rounded border"><div className="text-xs font-bold text-blue-600 mb-2 pb-1 border-b">出貨報表</div><div className="text-sm flex justify-between font-bold mb-2"><span className="text-gray-600">淨利:</span><span className="text-blue-600">${monthlyData.grouped[month].shipment.profit.toLocaleString()}</span></div><div className="flex-1 overflow-y-auto max-h-48 custom-scrollbar space-y-1">{monthlyData.grouped[month].shipment.items.map((it, idx) => (<div key={idx} className="bg-white border p-1.5 rounded flex justify-between items-center text-xs shadow-sm hover:bg-blue-50"><div><div className="font-bold">{it.date.substring(5)}</div><div className="text-gray-500 truncate w-16">{it.title}</div></div><div className="text-right font-bold text-blue-600">${it.rev.toLocaleString()}</div></div>))}</div></div>)}
+                                            { (reportCategory === 'all' || reportCategory === 'direct') && (<div className="flex flex-col bg-gray-50 p-2 rounded border"><div className="text-xs font-bold text-cyan-600 mb-2 pb-1 border-b">直營報表</div><div className="text-sm flex justify-between font-bold mb-2"><span className="text-gray-600">淨利:</span><span className={monthlyData.grouped[month].direct.profit >= 0 ? 'text-green-600' : 'text-red-600'}>${monthlyData.grouped[month].direct.profit.toLocaleString()}</span></div><div className="flex-1 overflow-y-auto max-h-48 custom-scrollbar space-y-1">{monthlyData.grouped[month].direct.items.map((it, idx) => (<div key={idx} className="bg-white border p-1.5 rounded flex justify-between items-center text-xs shadow-sm hover:bg-cyan-50"><div><div className="font-bold">{it.date.substring(5)}</div><div className="text-gray-500 truncate w-16">{it.title}</div></div><div className="text-right font-bold text-cyan-600">${it.rev.toLocaleString()}</div></div>))}</div></div>)}
+                                            { (reportCategory === 'all' || reportCategory === 'franchise') && (<div className="flex flex-col bg-gray-50 p-2 rounded border"><div className="text-xs font-bold text-indigo-600 mb-2 pb-1 border-b">加盟開通</div><div className="text-sm flex justify-between font-bold mb-2"><span className="text-gray-600">淨利:</span><span className="text-indigo-600">${monthlyData.grouped[month].franchise.profit.toLocaleString()}</span></div><div className="flex-1 overflow-y-auto max-h-48 custom-scrollbar space-y-1">{monthlyData.grouped[month].franchise.items.map((it, idx) => (<div key={idx} className="bg-white border p-1.5 rounded flex justify-between items-center text-xs shadow-sm hover:bg-indigo-50"><div><div className="font-bold">{it.date.substring(5)}</div><div className="text-gray-500 truncate w-16">{it.title}</div></div><div className="text-right font-bold text-indigo-600">${it.rev.toLocaleString()}</div></div>))}</div></div>)}
                                         </div>
                                     </div>
                                 ))}
-                                {monthlyData.months.length === 0 && (
-                                    <div className="text-center text-gray-400 p-8 border-2 border-dashed border-gray-200 rounded-lg">
-                                        <i className="fa-regular fa-folder-open text-2xl mb-2"></i>
-                                        <p>此區間內沒有符合條件的報表資料</p>
-                                    </div>
-                                )}
                             </div>
                         </div>
                     )}
@@ -1406,17 +725,14 @@
             const removePackItem = (index) => { if (confirm('確定要移除此贈品嗎？')) { const newPack = localSettings.starterPack.filter((_, i) => i !== index); setLocalSettings({ ...localSettings, starterPack: newPack }); } };
             const handlePackIdChange = (index, newId) => { const item = localSettings.items.find(i => i.id === newId); if(item) { const newPack = [...localSettings.starterPack]; newPack[index] = { ...newPack[index], id: newId, name: item.name, unit: item.unit }; setLocalSettings({ ...localSettings, starterPack: newPack }); } };
             const handleConstantChange = (field, value) => { setLocalSettings({ ...localSettings, constants: { ...localSettings.constants, [field]: Number(value) } }); };
-            
             return (
                 <div className={`space-y-4 pb-10 ${isReadonly ? 'readonly-mode' : ''}`}>
                     <h3 className="font-bold border-b pb-2">參數設定</h3>
-                    <div className="grid grid-cols-2 gap-4 bg-white p-4 shadow rounded mb-4"><div><label className="text-xs">中租合約總額 (基準)</label><input type="number" value={localSettings.constants.chaileaseBase} onChange={e=>handleConstantChange('chaileaseBase', e.target.value)} className="border p-1 w-full"/></div><div><label className="text-xs">中租手續費 (額外)</label><input type="number" value={localSettings.constants.chaileaseFee} onChange={e=>handleConstantChange('chaileaseFee', e.target.value)} className="border p-1 w-full"/></div><div><label className="text-xs">開辦費預算</label><input type="number" value={localSettings.constants.setupBudget} onChange={e=>handleConstantChange('setupBudget', e.target.value)} className="border p-1 w-full"/></div></div>
-                    <h3 className="font-bold border-b pb-2">加盟贈送清單預設值</h3>
+                    <div className="grid grid-cols-2 gap-4 bg-white p-4 shadow rounded mb-4"><div><label className="text-xs">中租合約總額</label><input type="number" value={localSettings.constants.chaileaseBase} onChange={e=>handleConstantChange('chaileaseBase', e.target.value)} className="border p-1 w-full"/></div><div><label className="text-xs">中租手續費</label><input type="number" value={localSettings.constants.chaileaseFee} onChange={e=>handleConstantChange('chaileaseFee', e.target.value)} className="border p-1 w-full"/></div><div><label className="text-xs">開辦費預算</label><input type="number" value={localSettings.constants.setupBudget} onChange={e=>handleConstantChange('setupBudget', e.target.value)} className="border p-1 w-full"/></div></div>
+                    <h3 className="font-bold border-b pb-2">贈送清單預設</h3>
                     <div className="bg-blue-50 p-4 rounded shadow space-y-2 mb-4 max-h-60 overflow-y-auto">{localSettings.starterPack.map((p, idx) => ( <div key={idx} className="flex gap-2 items-center text-sm border-b border-blue-100 pb-1"> <select value={p.id} onChange={(e)=>handlePackIdChange(idx, e.target.value)} className="border p-1 w-32 truncate"> {localSettings.items.map(i=><option key={i.id} value={i.id}>{i.name}</option>)} </select> <input type="number" value={p.qty} onChange={e=>handlePackChange(idx, 'qty', e.target.value)} className="border p-1 w-16" placeholder="數量"/> <span className="text-gray-500 w-8">{p.unit}</span> <button onClick={()=>removePackItem(idx)} className="text-red-500"><i className="fa-solid fa-times"></i></button> </div> ))} <button onClick={addNewPackItem} className="text-blue-600 text-sm font-bold mt-2">+ 新增贈品項目</button></div>
                     <h3 className="font-bold border-b pb-2">全商品列表</h3>
-                    <div className="space-y-2">{(localSettings.items || []).map((item, idx) => ( <div key={item.id} className="flex gap-2 bg-white p-2 rounded shadow-sm items-center"> <input value={item.name} onChange={e=>handleItemChange(idx, 'name', e.target.value)} className="border p-1 w-24 text-sm font-bold"/> <select value={item.category} onChange={e=>handleItemChange(idx, 'category', e.target.value)} className="border p-1 text-sm"><option value="箱裝">箱裝</option><option value="沙拉">沙拉</option><option value="包材">包材</option><option value="其他">其他</option><option value="器材">器材</option></select> <input type="number" value={item.cost} onChange={e=>handleItemChange(idx, 'cost', e.target.value)} className="border p-1 w-16 text-sm" placeholder="成本"/> <input type="number" value={item.price} onChange={e=>handleItemChange(idx, 'price', e.target.value)} className="border p-1 w-16 text-sm" placeholder="售價"/> <button onClick={()=>removeItem(idx)} className="text-red-500 px-2">x</button> </div> ))}</div>
-                    <button onClick={addNewItem} className="w-full bg-gray-200 py-2 rounded font-bold">+ 新增商品</button>
-                    {!isReadonly && <div className="sticky bottom-4"><button onClick={()=>onSave(localSettings)} className="w-full bg-blue-600 text-white py-3 rounded font-bold shadow-lg">儲存全部設定</button></div>}
+                    <div className="space-y-2">{(localSettings.items || []).map((item, idx) => ( <div key={item.id} className="flex gap-2 bg-white p-2 rounded shadow-sm items-center"> <input value={item.name} onChange={e=>handleItemChange(idx, 'name', e.target.value)} className="border p-1 w-24 text-sm font-bold"/> <select value={item.category} onChange={e=>handleItemChange(idx, 'category', e.target.value)} className="border p-1 text-sm"><option value="箱裝">箱裝</option><option value="沙拉">沙拉</option><option value="包材">包材</option><option value="其他">其他</option><option value="器材">器材</option></select> <input type="number" value={item.cost} onChange={e=>handleItemChange(idx, 'cost', e.target.value)} className="border p-1 w-16 text-sm" placeholder="成本"/> <input type="number" value={item.price} onChange={e=>handleItemChange(idx, 'price', e.target.value)} className="border p-1 w-16 text-sm" placeholder="售價"/> <button onClick={()=>removeItem(idx)} className="text-red-500 px-2">x</button> </div> ))}</div><button onClick={addNewItem} className="w-full bg-gray-200 py-2 rounded font-bold">+ 新增商品</button>{!isReadonly && <div className="sticky bottom-4"><button onClick={()=>onSave(localSettings)} className="w-full bg-blue-600 text-white py-3 rounded font-bold shadow-lg">儲存全部設定</button></div>}
                 </div>
             );
         };
