@@ -93,9 +93,10 @@
         };
 
         // v66 價格遷移：在 Firestore 設定載入後自動修正價格
-        const MIGRATION_VERSION = 'v66';
+        const MIGRATION_VERSION = 'v66b';
         const V66_PRICE_UPDATES = {
             'cut': { cost: 3750 },
+            'cucumber': { cost: 400, price: 400 },
             'pepper': { cost: 460, price: 460 },
             'chili': { cost: 390, price: 390 },
             'boat_med': { name: '特中(餐盒)', cost: 105, price: 105 },
@@ -110,7 +111,6 @@
             const newItems = [...(currentData.items || [])];
             let changed = false;
 
-            // 更新既有品項價格
             newItems.forEach((item, idx) => {
                 const update = V66_PRICE_UPDATES[item.id];
                 if (update) {
@@ -123,20 +123,17 @@
                 }
             });
 
-            // 新增巧克力米（若不存在）
             if (!newItems.find(i => i.id === 'choco_rice')) {
                 newItems.push(V66_NEW_ITEM);
                 changed = true;
             }
 
-            // 更新 starterPack 名稱
             const newStarterPack = [...(currentData.starterPack || [])];
             newStarterPack.forEach((p, idx) => {
                 if (p.id === 'boat_med' && p.name !== '特中(餐盒)') { newStarterPack[idx] = { ...p, name: '特中(餐盒)' }; changed = true; }
                 if (p.id === 'boat_large' && p.name !== '特大(餐盒)') { newStarterPack[idx] = { ...p, name: '特大(餐盒)' }; changed = true; }
             });
 
-            // 寫入固定成本（若不存在）
             const newConstants = { ...currentData.constants };
             if (!newConstants.directFixedCosts) {
                 newConstants.directFixedCosts = { salary: 50000, warehouseRent: 4000, boothRent: 16000 };
@@ -150,11 +147,10 @@
             if (changed) {
                 const updatedData = { ...currentData, items: newItems, starterPack: newStarterPack, constants: newConstants, migrationVersion: MIGRATION_VERSION };
                 await settingsRef.set(updatedData);
-                console.log('v66 設定遷移完成');
+                console.log('v66b 設定遷移完成');
                 return updatedData;
             }
 
-            // 即使沒改也標記版本
             await settingsRef.update({ migrationVersion: MIGRATION_VERSION });
             return { ...currentData, migrationVersion: MIGRATION_VERSION };
         };
@@ -165,7 +161,7 @@
                 { id: 'squid', name: '墨魚', category: '箱裝', cost: 2640, price: 4200, unit: '箱', isBox: true },
                 { id: 'shrimp', name: '蝦球', category: '箱裝', cost: 4500, price: 6600, unit: '箱', isBox: true },
                 { id: 'burdock', name: '牛蒡', category: '箱裝', cost: 2040, price: 3600, unit: '箱', isBox: true },
-                { id: 'cucumber', name: '黃瓜碎', category: '其他', cost: 355, price: 355, unit: '包' },
+                { id: 'cucumber', name: '黃瓜碎', category: '其他', cost: 400, price: 400, unit: '包' },
                 { id: 'pepper', name: '椒鹽粉(2斤)', category: '其他', cost: 460, price: 460, unit: '包' },
                 { id: 'soul', name: '黯然銷魂粉(2斤)', category: '其他', cost: 600, price: 600, unit: '包' },
                 { id: 'chili', name: '青花辣椒粉(1斤)', category: '其他', cost: 390, price: 390, unit: '包' },
@@ -289,7 +285,6 @@
                         const unsubSettings = settingsDocRef.onSnapshot(async (doc) => {
                             if (doc.exists) {
                                 let data = doc.data();
-                                // 執行 v66 遷移（若尚未遷移）
                                 if (data.migrationVersion !== MIGRATION_VERSION) {
                                     data = await migrateSettingsV66(settingsDocRef, data);
                                 }
