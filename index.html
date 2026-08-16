@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>加盟進銷存管理系統 Pro v65 (權限協作版)</title>
+    <title>加盟進銷存管理系統 Pro v66 (權限協作版)</title>
     
     <!-- 修正：加入空白 favicon 以消除 404 錯誤 -->
     <link rel="icon" href="data:,">
@@ -94,25 +94,26 @@
 
         const DEFAULT_SETTINGS = {
             items: [
-                { id: 'cut', name: '花枝', category: '箱裝', cost: 3900, price: 5700, unit: '箱', isBox: true },
+                { id: 'cut', name: '花枝', category: '箱裝', cost: 3750, price: 5700, unit: '箱', isBox: true },
                 { id: 'squid', name: '墨魚', category: '箱裝', cost: 2640, price: 4200, unit: '箱', isBox: true },
                 { id: 'shrimp', name: '蝦球', category: '箱裝', cost: 4500, price: 6600, unit: '箱', isBox: true },
                 { id: 'burdock', name: '牛蒡', category: '箱裝', cost: 2040, price: 3600, unit: '箱', isBox: true },
                 { id: 'cucumber', name: '黃瓜碎', category: '其他', cost: 355, price: 355, unit: '包' },
-                { id: 'pepper', name: '椒鹽粉(2斤)', category: '其他', cost: 440, price: 440, unit: '包' },
+                { id: 'pepper', name: '椒鹽粉(2斤)', category: '其他', cost: 460, price: 460, unit: '包' },
                 { id: 'soul', name: '黯然銷魂粉(2斤)', category: '其他', cost: 600, price: 600, unit: '包' },
-                { id: 'chili', name: '青花辣椒粉(1斤)', category: '其他', cost: 380, price: 380, unit: '包' },
+                { id: 'chili', name: '青花辣椒粉(1斤)', category: '其他', cost: 390, price: 390, unit: '包' },
                 { id: 'salad_orig', name: '原味沙拉', category: '沙拉', cost: 45, price: 45, unit: '包' },
                 { id: 'salad_mus', name: '芥末沙拉', category: '沙拉', cost: 60, price: 60, unit: '包' },
                 { id: 'salad_honey', name: '蜂蜜沙拉', category: '沙拉', cost: 60, price: 60, unit: '包' },
-                { id: 'boat_med', name: '特中(紙袋)', category: '包材', cost: 90, price: 90, unit: '條' },
-                { id: 'boat_large', name: '特大(紙袋)', category: '包材', cost: 125, price: 125, unit: '條' },
+                { id: 'boat_med', name: '特中(餐盒)', category: '包材', cost: 105, price: 105, unit: '條' },
+                { id: 'boat_large', name: '特大(餐盒)', category: '包材', cost: 168, price: 168, unit: '條' },
                 { id: 'bamboo', name: '竹籤', category: '包材', cost: 40, price: 40, unit: '包' },
                 { id: 'fork', name: '叉匙', category: '包材', cost: 27, price: 27, unit: '包' },
-                { id: 'bag', name: '提袋', category: '包材', cost: 22, price: 22, unit: '包' },
+                { id: 'bag', name: '提袋', category: '包材', cost: 29, price: 29, unit: '包' },
                 { id: 'tray3', name: '3”船型', category: '包材', cost: 0.5, price: 0.5, unit: '個' },
                 { id: 'tray4', name: '4”船型', category: '包材', cost: 0.6, price: 0.6, unit: '個' },
                 { id: 'shrimp_chip', name: '蝦餅', category: '其他', cost: 60, price: 60, unit: '包' },
+                { id: 'choco_rice', name: '巧克力米', category: '其他', cost: 175, price: 175, unit: '罐' },
                 { id: 'glove', name: '手套', category: '其他', cost: 159, price: 159, unit: '盒' },
                 { id: 'equip_set', name: '加盟器材套組', category: '器材', cost: 43200, price: 0, unit: '式' }
             ],
@@ -125,8 +126,8 @@
                 { name: '原味沙拉', qty: 12, unit: '包', type: 'dry', id: 'salad_orig' },
                 { name: '芥末沙拉', qty: 10, unit: '包', type: 'dry', id: 'salad_mus' },
                 { name: '蜂蜜沙拉', qty: 10, unit: '包', type: 'dry', id: 'salad_honey' },
-                { name: '特中(紙袋)', qty: 3, unit: '條', type: 'dry', id: 'boat_med' },
-                { name: '特大(紙袋)', qty: 1, unit: '條', type: 'dry', id: 'boat_large' },
+                { name: '特中(餐盒)', qty: 3, unit: '條', type: 'dry', id: 'boat_med' },
+                { name: '特大(餐盒)', qty: 1, unit: '條', type: 'dry', id: 'boat_large' },
                 { name: '竹籤', qty: 5, unit: '包', type: 'dry', id: 'bamboo' },
                 { name: '叉匙', qty: 10, unit: '包', type: 'dry', id: 'fork' },
                 { name: '提袋', qty: 10, unit: '包', type: 'dry', id: 'bag' },
@@ -143,7 +144,17 @@
                 chaileaseBase: 240000,
                 chaileaseFee: 13200,
                 setupBudget: 50000,
-                taxRate: 0.05
+                taxRate: 0.05,
+                directFixedCosts: {
+                    salary: 50000,
+                    warehouseRent: 4000,
+                    boothRent: 16000
+                },
+                companyFixedCosts: {
+                    officeRent: 26000,
+                    ctbcLoan: 11708,
+                    chaileaseLoan: 38000
+                }
             }
         };
 
@@ -323,7 +334,7 @@
                 <div className="min-h-screen max-w-5xl mx-auto bg-white shadow-xl flex flex-col">
                     <div className="bg-slate-800 text-white p-4 sticky top-0 z-50 shadow-md">
                         <div className="flex justify-between items-center mb-2">
-                            <h1 className="text-lg font-bold"><i className="fa-solid fa-cloud mr-2 text-green-400"></i>加盟系統 Pro v65 <span className="text-xs bg-purple-500 px-1 rounded ml-1">多人協作版</span></h1>
+                            <h1 className="text-lg font-bold"><i className="fa-solid fa-cloud mr-2 text-green-400"></i>加盟系統 Pro v66 <span className="text-xs bg-purple-500 px-1 rounded ml-1">多人協作版</span></h1>
                             <div className="flex items-center space-x-2">
                                 <span className="text-xs text-slate-300 hidden md:inline">{user.email} ({role})</span>
                                 <button onClick={() => firebase.auth().signOut()} className="text-xs bg-slate-700 px-2 py-1 rounded hover:bg-slate-600">登出</button>
@@ -348,9 +359,9 @@
                             <div className="animate-fade-in">
                                 {activeTab === 'order' && <OrderTab items={appSettings.items} inventory={inventory} onSubmit={addTransaction} onUpdateTrans={updateTransaction} transactions={transactions} onUpdateInv={updateInventory} franchises={uniqueFranchises} genReceipt={generateFormattedReceipt} role={role} />}
                                 {activeTab === 'stockIn' && <StockInTab items={appSettings.items} inventory={inventory} onSubmit={addTransaction} onUpdateInv={updateInventory} expenseNames={uniqueExpenseNames} transactions={transactions} role={role} />}
-                                {activeTab === 'direct' && <DirectStoreTab items={appSettings.items} inventory={inventory} onSubmit={addTransaction} onUpdateInv={updateInventory} transactions={transactions} onDelete={deleteTransaction} role={role} />}
+                                {activeTab === 'direct' && <DirectStoreTab items={appSettings.items} inventory={inventory} onSubmit={addTransaction} onUpdateInv={updateInventory} transactions={transactions} onDelete={deleteTransaction} role={role} settings={appSettings} />}
                                 {activeTab === 'franchise' && <FranchiseTab items={appSettings.items} inventory={inventory} onSubmit={addTransaction} onUpdateInv={updateInventory} onUpdateTrans={updateTransaction} onDelete={deleteTransaction} transactions={transactions} franchises={uniqueFranchises} settings={appSettings} genReceipt={generateFormattedReceipt} role={role} />}
-                                {activeTab === 'report' && <ReportTab transactions={transactions} onDelete={deleteTransaction} items={appSettings.items} role={role} />}
+                                {activeTab === 'report' && <ReportTab transactions={transactions} onDelete={deleteTransaction} items={appSettings.items} role={role} settings={appSettings} />}
                                 {activeTab === 'settings' && <SettingsTab settings={appSettings} onSave={saveSettings} role={role} />}
                             </div>
                         )}
@@ -390,7 +401,7 @@
             );
         };
 
-        const DirectStoreTab = ({ items, inventory, onSubmit, onUpdateInv, transactions, onDelete, role }) => {
+        const DirectStoreTab = ({ items, inventory, onSubmit, onUpdateInv, transactions, onDelete, role, settings }) => {
             const isReadonly = role === ROLES.VIEWER;
             const [view, setView] = useState('manual'); 
             const [selectedMonth, setSelectedMonth] = useState(moment().format('YYYY-MM'));
@@ -452,6 +463,67 @@
                 setManualIncome(''); setManualExpense(''); setManualNote(''); setManualCart({});
             };
 
+            const generateEmailReport = (pDate, pIncome, reportContent, allNanyaTrans) => {
+                const currentMonth = moment(pDate).format('YYYY-MM');
+                const startOfMonth = moment(currentMonth).startOf('month');
+                const endOfMonth = moment(currentMonth).endOf('month');
+                const daysInMonth = startOfMonth.daysInMonth();
+
+                const monthTrans = allNanyaTrans.filter(t => moment(t.date).isBetween(startOfMonth, endOfMonth, 'day', '[]'));
+                const dailyRevMap = {};
+                let totalRev = 0;
+                monthTrans.forEach(t => {
+                    if (!dailyRevMap[t.date]) dailyRevMap[t.date] = 0;
+                    dailyRevMap[t.date] += t.income;
+                    totalRev += t.income;
+                });
+                // 加上今天的資料
+                if (!dailyRevMap[pDate]) dailyRevMap[pDate] = 0;
+                dailyRevMap[pDate] += pIncome;
+                totalRev += pIncome;
+
+                const workDays = Object.keys(dailyRevMap).length;
+                const dailyAvg = workDays > 0 ? Math.round(totalRev / workDays) : 0;
+                const dfc = settings?.constants?.directFixedCosts || {};
+                const fixedTotal = (dfc.salary || 0) + (dfc.warehouseRent || 0) + (dfc.boothRent || 0);
+
+                let calendarText = `\n========== ${currentMonth} 月曆型業績 ==========\n`;
+                calendarText += `日\t一\t二\t三\t四\t五\t六\n`;
+                calendarText += `------------------------------------------------\n`;
+
+                const firstDayOfWeek = startOfMonth.day();
+                let line = '';
+                for (let b = 0; b < firstDayOfWeek; b++) line += '\t';
+
+                for (let d = 1; d <= daysInMonth; d++) {
+                    const dateStr = `${currentMonth}-${d.toString().padStart(2, '0')}`;
+                    const rev = dailyRevMap[dateStr];
+                    line += (rev ? `$${rev.toLocaleString()}` : '-') + '\t';
+                    const dayOfWeek = (firstDayOfWeek + d - 1) % 7;
+                    if (dayOfWeek === 6 || d === daysInMonth) {
+                        calendarText += line.trimEnd() + '\n';
+                        line = '';
+                    }
+                }
+
+                calendarText += `------------------------------------------------\n`;
+                calendarText += `當月總營收: $${totalRev.toLocaleString()}\n`;
+                calendarText += `營業天數: ${workDays} 天\n`;
+                calendarText += `日平均業績: $${dailyAvg.toLocaleString()}\n`;
+                calendarText += `------------------------------------------------\n`;
+                calendarText += `【每月固定成本】\n`;
+                calendarText += `人員薪資: $${(dfc.salary||0).toLocaleString()}\n`;
+                calendarText += `倉庫租金: $${(dfc.warehouseRent||0).toLocaleString()}\n`;
+                calendarText += `攤位租金: $${(dfc.boothRent||0).toLocaleString()}\n`;
+                calendarText += `固定成本合計: $${fixedTotal.toLocaleString()}\n`;
+                calendarText += `扣除固定成本後預估淨利: $${(totalRev - fixedTotal).toLocaleString()}\n`;
+
+                const subject = encodeURIComponent(`【烏卡港直營日報】${pDate} 業績報表`);
+                const body = encodeURIComponent(reportContent + '\n' + calendarText);
+                const recipient = 'aa0980115055@gmail.com';
+                window.open(`mailto:${recipient}?subject=${subject}&body=${body}`, '_blank');
+            };
+
             const processSubmission = (pDate, pIncome, pExpense, pNote, pItems) => {
                 const totalCostOfGoods = pItems.reduce((sum, item) => sum + (item.cost * item.qty), 0);
                 const totalCost = totalCostOfGoods + pExpense;
@@ -468,7 +540,11 @@
                 const record = { id: Date.now(), date: pDate, time: moment().format('A h:mm'), type: '直營報表', franchise: '湳雅直營店', content: content, rawItems: pItems.map(i => ({...i, id: i.id, qty: i.qty})), shipping: 0, income: pIncome, rawExpenses: pExpense, expenseDetail: pNote, cost: totalCost, profit: profit, total: pIncome };
                 onSubmit(record);
                 pItems.forEach(item => onUpdateInv(item.id, -item.qty));
-                alert('日報表已建立，庫存已扣除');
+
+                // 自動產生 Email 報表
+                generateEmailReport(pDate, pIncome, content, nanyaTrans);
+
+                alert('日報表已建立，庫存已扣除，Email 報表已開啟');
             };
 
             const toggleExpand = (date) => setExpandedDate(expandedDate === date ? null : date);
@@ -557,11 +633,30 @@
                                 <input type="month" value={selectedMonth} onChange={e=>setSelectedMonth(e.target.value)} className="border p-2 rounded font-bold text-gray-700"/>
                             </div>
                             
-                            <div className="text-center font-bold text-gray-700 text-sm md:text-base bg-white p-3 md:p-4 rounded shadow-sm border flex flex-col md:flex-row justify-center items-center gap-2 md:gap-4">
-                                <span>當月總營收: <span className="text-blue-600 text-lg md:text-xl">${monthStats.totalRev.toLocaleString()}</span></span>
-                                <span className="hidden md:inline text-gray-300">|</span> 
-                                <span>平均業績 (共{Object.keys(monthStats.dailyGroups).length}天): <span className="text-green-600 text-lg md:text-xl">${Object.keys(monthStats.dailyGroups).length > 0 ? Math.round(monthStats.totalRev / Object.keys(monthStats.dailyGroups).length).toLocaleString() : 0}</span></span>
-                            </div>
+                            {(() => {
+                                const dfc = settings?.constants?.directFixedCosts || {};
+                                const totalFixed = (dfc.salary || 0) + (dfc.warehouseRent || 0) + (dfc.boothRent || 0);
+                                const daysWorked = Object.keys(monthStats.dailyGroups).length;
+                                const dailyAvg = daysWorked > 0 ? Math.round(monthStats.totalRev / daysWorked) : 0;
+                                return (
+                                    <div className="bg-white p-3 md:p-4 rounded shadow-sm border space-y-2">
+                                        <div className="text-center font-bold text-gray-700 text-sm md:text-base flex flex-col md:flex-row justify-center items-center gap-2 md:gap-4">
+                                            <span>當月總營收: <span className="text-blue-600 text-lg md:text-xl">${monthStats.totalRev.toLocaleString()}</span></span>
+                                            <span className="hidden md:inline text-gray-300">|</span>
+                                            <span>平均業績 (共{daysWorked}天): <span className="text-green-600 text-lg md:text-xl">${dailyAvg.toLocaleString()}</span></span>
+                                        </div>
+                                        <div className="border-t pt-2 grid grid-cols-2 md:grid-cols-4 gap-2 text-xs text-gray-500">
+                                            <div className="bg-red-50 p-2 rounded text-center"><div className="font-bold text-gray-600">人員薪資</div><div className="text-red-600 font-bold">${(dfc.salary||0).toLocaleString()}</div></div>
+                                            <div className="bg-red-50 p-2 rounded text-center"><div className="font-bold text-gray-600">倉庫租金</div><div className="text-red-600 font-bold">${(dfc.warehouseRent||0).toLocaleString()}</div></div>
+                                            <div className="bg-red-50 p-2 rounded text-center"><div className="font-bold text-gray-600">攤位租金</div><div className="text-red-600 font-bold">${(dfc.boothRent||0).toLocaleString()}</div></div>
+                                            <div className="bg-orange-50 p-2 rounded text-center"><div className="font-bold text-gray-600">固定成本合計</div><div className="text-orange-600 font-bold text-sm">${totalFixed.toLocaleString()}</div></div>
+                                        </div>
+                                        <div className="text-center text-sm font-bold">
+                                            扣除固定成本後淨利: <span className={`text-base ${(monthStats.totalRev - totalFixed) >= 0 ? 'text-green-600' : 'text-red-600'}`}>${(monthStats.totalRev - totalFixed).toLocaleString()}</span>
+                                        </div>
+                                    </div>
+                                );
+                            })()}
 
                             {renderCalendar()}
 
@@ -1122,7 +1217,7 @@
             );
         };
 
-        const ReportTab = ({ transactions, onDelete, items, role }) => {
+        const ReportTab = ({ transactions, onDelete, items, role, settings }) => {
             const isReadonly = role === ROLES.VIEWER;
             const [viewMode, setViewMode] = useState('dashboard');
             const [reportCategory, setReportCategory] = useState('all');
@@ -1157,7 +1252,24 @@
                 s.shipmentMargin = s.shipmentRev - s.shipmentCost; s.directStoreNet = s.directStoreSales - (s.directStoreExp + s.directStoreCost); return s;
             }, [allTransInRange]);
 
+            const dfc = settings?.constants?.directFixedCosts || {};
+            const cfc = settings?.constants?.companyFixedCosts || {};
+            const directFixedTotal = (dfc.salary || 0) + (dfc.warehouseRent || 0) + (dfc.boothRent || 0);
+            const companyFixedTotal = (cfc.officeRent || 0) + (cfc.ctbcLoan || 0) + (cfc.chaileaseLoan || 0);
+            const allFixedCosts = directFixedTotal + companyFixedTotal;
+
+            // 計算選取區間涵蓋幾個月份，按月份數乘以固定成本
+            const monthsInRange = useMemo(() => {
+                const s = moment(start); const e = moment(end);
+                const months = new Set();
+                const cur = s.clone().startOf('month');
+                while (cur.isSameOrBefore(e)) { months.add(cur.format('YYYY-MM')); cur.add(1, 'month'); }
+                return months.size;
+            }, [start, end]);
+            const totalFixedForRange = allFixedCosts * monthsInRange;
+
             const companyNetProfit = (stats.shipmentRev + stats.franchiseRev + stats.directStoreSales) - (stats.shipmentCost + stats.franchiseCost + stats.transferCost + stats.expenses + stats.directStoreExp + stats.directStoreCost);
+            const companyNetProfitAfterFixed = companyNetProfit - totalFixedForRange;
             
             const monthlyData = useMemo(() => {
                 const grouped = {};
@@ -1261,6 +1373,38 @@
                                 <div className="bg-cyan-50 p-3 rounded shadow border-l-4 border-cyan-500"><div className="text-xs text-gray-500 font-bold mb-1">直營店 (湳雅)</div><div className="flex justify-between items-baseline"><span className="text-xs text-gray-400">業績</span><span className="text-lg font-bold text-cyan-700">${stats.directStoreSales.toLocaleString()}</span></div><div className="flex justify-between items-baseline"><span className="text-xs text-gray-400">總支出</span><span className="text-sm text-red-400">-${(stats.directStoreExp + stats.directStoreCost).toLocaleString()}</span></div><div className="border-t border-cyan-200 mt-1 pt-1 flex justify-between"><span className="text-xs font-bold">淨利</span><span className={`text-sm font-bold ${stats.directStoreNet>=0?'text-green-600':'text-red-600'}`}>${stats.directStoreNet.toLocaleString()}</span></div></div>
                                 <div className="bg-indigo-50 p-3 rounded shadow border-l-4 border-indigo-500"><div className="text-xs text-gray-500 font-bold mb-1">加盟開通</div><div className="flex justify-between items-baseline"><span className="text-xs text-gray-400">收入</span><span className="text-lg font-bold text-indigo-700">${stats.franchiseRev.toLocaleString()}</span></div><div className="flex justify-between items-baseline"><span className="text-xs text-gray-400">成本</span><span className="text-sm text-red-400">-${stats.franchiseCost.toLocaleString()}</span></div>{stats.franchiseTaxTotal > 0 && <div className="text-[10px] text-red-500 font-bold text-right mt-1">含發票稅額: ${stats.franchiseTaxTotal.toLocaleString()}</div>}<div className="border-t border-indigo-200 mt-1 pt-1 flex justify-between"><span className="text-xs font-bold">損益</span><span className="text-sm font-bold text-indigo-600">+${stats.franchiseProfit.toLocaleString()}</span></div></div>
                                 <div className="bg-yellow-50 p-3 rounded shadow border-l-4 border-yellow-500 flex flex-col justify-center"><div className="text-xs text-gray-500 font-bold mb-2">公司總淨利 (Net Profit)</div><div className={`text-2xl font-bold ${companyNetProfit>=0?'text-yellow-700':'text-red-600'}`}>${companyNetProfit.toLocaleString()}</div><div className="text-[10px] text-gray-400 mt-1">扣除調撥/營運雜支/直營成本</div></div>
+                            </div>
+
+                            <div className="bg-white p-4 rounded shadow border">
+                                <div className="flex justify-between items-center mb-3 border-b pb-2">
+                                    <h3 className="font-bold text-gray-700"><i className="fa-solid fa-building-columns mr-2 text-gray-400"></i>每月固定成本 (x{monthsInRange}個月)</h3>
+                                    <span className="text-sm font-bold text-red-600 bg-red-50 px-3 py-1 rounded-full">區間合計: -${totalFixedForRange.toLocaleString()}</span>
+                                </div>
+                                <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-3">
+                                    <div className="bg-cyan-50 p-2 rounded border border-cyan-100">
+                                        <div className="text-[10px] text-gray-500 font-bold mb-1">湳雅直營固定成本</div>
+                                        <div className="text-xs space-y-0.5">
+                                            <div className="flex justify-between"><span>人員薪資</span><span className="font-bold text-red-500">${(dfc.salary||0).toLocaleString()}</span></div>
+                                            <div className="flex justify-between"><span>倉庫租金</span><span className="font-bold text-red-500">${(dfc.warehouseRent||0).toLocaleString()}</span></div>
+                                            <div className="flex justify-between"><span>攤位租金</span><span className="font-bold text-red-500">${(dfc.boothRent||0).toLocaleString()}</span></div>
+                                            <div className="flex justify-between border-t pt-1 mt-1"><span className="font-bold">小計</span><span className="font-bold text-red-600">${directFixedTotal.toLocaleString()}</span></div>
+                                        </div>
+                                    </div>
+                                    <div className="bg-indigo-50 p-2 rounded border border-indigo-100">
+                                        <div className="text-[10px] text-gray-500 font-bold mb-1">公司固定成本</div>
+                                        <div className="text-xs space-y-0.5">
+                                            <div className="flex justify-between"><span>公司租金</span><span className="font-bold text-red-500">${(cfc.officeRent||0).toLocaleString()}</span></div>
+                                            <div className="flex justify-between"><span>中信貸款</span><span className="font-bold text-red-500">${(cfc.ctbcLoan||0).toLocaleString()}</span></div>
+                                            <div className="flex justify-between"><span>中租貸款</span><span className="font-bold text-red-500">${(cfc.chaileaseLoan||0).toLocaleString()}</span></div>
+                                            <div className="flex justify-between border-t pt-1 mt-1"><span className="font-bold">小計</span><span className="font-bold text-red-600">${companyFixedTotal.toLocaleString()}</span></div>
+                                        </div>
+                                    </div>
+                                    <div className="bg-yellow-50 p-2 rounded border border-yellow-200 flex flex-col justify-center items-center col-span-2 md:col-span-1">
+                                        <div className="text-[10px] text-gray-500 font-bold mb-1">扣除固定成本後淨利</div>
+                                        <div className={`text-xl font-bold ${companyNetProfitAfterFixed >= 0 ? 'text-green-600' : 'text-red-600'}`}>${companyNetProfitAfterFixed.toLocaleString()}</div>
+                                        <div className="text-[9px] text-gray-400 mt-1">每月固定: ${allFixedCosts.toLocaleString()}</div>
+                                    </div>
+                                </div>
                             </div>
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
