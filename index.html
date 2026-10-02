@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>加盟進銷存管理系統 Pro v69 (權限協作版)</title>
+    <title>加盟進銷存管理系統 Pro v70 (權限協作版)</title>
     
     <!-- 修正：加入空白 favicon 以消除 404 錯誤 -->
     <link rel="icon" href="data:,">
@@ -131,6 +131,14 @@
         };
         const getCostOnDate = (item, date) => getHistoricalValue(item, date, 'cost');
         const getPriceOnDate = (item, date) => getHistoricalValue(item, date, 'price');
+
+        // ---- 日期統一處理 ----
+        const DATE_FORMATS = ['YYYY/MM/DD', 'YYYY-MM-DD', 'YYYY/M/D', 'YYYY-M-D'];
+        // 表單日期轉存檔格式；日期欄空白或無效時改用今天（避免存成 "Invalid date" 而在報表中消失）
+        const toRecordDate = (d) => { const m = moment(d, DATE_FORMATS, true); return (m.isValid() ? m : moment()).format('YYYY/MM/DD'); };
+        // 單據日期；舊資料日期無效時改用建立時間 (id)，確保每一筆都進入報表與損益計算
+        const txMoment = (t) => { const m = moment(t && t.date, DATE_FORMATS, true); return m.isValid() ? m : moment(Number(t && t.id) || undefined); };
+        const hasValidDate = (t) => moment(t && t.date, DATE_FORMATS, true).isValid();
 
         const migrateSettingsV66 = async (settingsRef, currentData) => {
             if (currentData.migrationVersion === MIGRATION_VERSION) return currentData;
@@ -457,7 +465,7 @@
                 <div className="min-h-screen max-w-5xl mx-auto bg-white shadow-xl flex flex-col">
                     <div className="bg-slate-800 text-white p-4 sticky top-0 z-50 shadow-md">
                         <div className="flex justify-between items-center mb-2">
-                            <h1 className="text-lg font-bold"><i className="fa-solid fa-cloud mr-2 text-green-400"></i>加盟系統 Pro v69 <span className="text-xs bg-purple-500 px-1 rounded ml-1">多人協作版</span></h1>
+                            <h1 className="text-lg font-bold"><i className="fa-solid fa-cloud mr-2 text-green-400"></i>加盟系統 Pro v70 <span className="text-xs bg-purple-500 px-1 rounded ml-1">多人協作版</span></h1>
                             <div className="flex items-center space-x-2">
                                 <span className="text-xs text-slate-300 hidden md:inline">{user.email} ({role})</span>
                                 <button onClick={() => firebase.auth().signOut()} className="text-xs bg-slate-700 px-2 py-1 rounded hover:bg-slate-600">登出</button>
@@ -490,7 +498,7 @@
                                 {activeTab === 'stockIn' && <StockInTab items={appSettings.items} inventory={inventory} onSubmit={addTransaction} onUpdateInv={updateInventory} expenseNames={uniqueExpenseNames} transactions={transactions} role={role} />}
                                 {activeTab === 'direct' && <DirectStoreTab items={appSettings.items} inventory={inventory} onSubmit={addTransaction} onUpdateInv={updateInventory} transactions={transactions} onDelete={deleteTransaction} role={role} settings={appSettings} />}
                                 {activeTab === 'franchise' && <FranchiseTab items={appSettings.items} inventory={inventory} onSubmit={addTransaction} onUpdateInv={updateInventory} onUpdateTrans={updateTransaction} onDelete={deleteTransaction} transactions={transactions} franchises={uniqueFranchises} settings={appSettings} genReceipt={generateFormattedReceipt} role={role} />}
-                                {activeTab === 'report' && <ReportTab transactions={transactions} onDelete={deleteTransaction} items={appSettings.items} role={role} settings={appSettings} />}
+                                {activeTab === 'report' && <ReportTab transactions={transactions} onDelete={deleteTransaction} items={appSettings.items} role={role} settings={appSettings} onApplyTransUpdates={applyTransactionUpdates} />}
                                 {activeTab === 'settings' && <SettingsTab settings={appSettings} onSave={saveSettings} role={role} transactions={transactions} onApplyTransUpdates={applyTransactionUpdates} />}
                             </div>
                         )}
@@ -549,7 +557,7 @@
             const monthStats = useMemo(() => {
                 const start = moment(selectedMonth).startOf('month');
                 const end = moment(selectedMonth).endOf('month');
-                const filtered = nanyaTrans.filter(t => moment(t.date).isBetween(start, end, 'day', '[]'));
+                const filtered = nanyaTrans.filter(t => txMoment(t).isBetween(start, end, 'day', '[]'));
                 const dailyGroups = {};
                 let totalRev = 0;
                 
@@ -821,7 +829,7 @@
             const copyToClipboard = () => { 
                 const { itemDetails } = prepareOrderData(); 
                 const title = isTransfer ? `【調撥單】_${franchiseName || '未填寫'}` : `【訂貨單】_${franchiseName || '未填寫'}`;
-                const text = genReceipt(title, moment(orderDate).format('YYYY/MM/DD'), itemDetails, items.reduce((map, i) => ({...map, [i.id]: i}), {}), extraItems, Number(shippingFee));
+                const text = genReceipt(title, toRecordDate(orderDate), itemDetails, items.reduce((map, i) => ({...map, [i.id]: i}), {}), extraItems, Number(shippingFee));
                 const ta=document.createElement("textarea"); ta.value=text; document.body.appendChild(ta); ta.select(); try{document.execCommand('copy');alert('已複製\n'+text);}catch(e){alert('複製失敗');} document.body.removeChild(ta); 
             };
 
@@ -843,10 +851,10 @@
                 });
                 
                 const title = isTransfer ? `【調撥單】_${franchiseName}` : `【訂貨單】_${franchiseName}`;
-                const detailsText = genReceipt(title, moment(orderDate).format('YYYY/MM/DD'), itemDetails, items.reduce((map, i) => ({...map, [i.id]: i}), {}), extraItems, finalShipping);
+                const detailsText = genReceipt(title, toRecordDate(orderDate), itemDetails, items.reduce((map, i) => ({...map, [i.id]: i}), {}), extraItems, finalShipping);
                 
                 const record = { 
-                    id: Date.now(), date: moment(orderDate).format('YYYY/MM/DD'), time: moment().format('A h:mm'), 
+                    id: Date.now(), date: toRecordDate(orderDate), time: moment().format('A h:mm'), 
                     type: isTransfer ? '調撥' : '出貨', franchise: franchiseName, content: detailsText.trim(), 
                     rawItems: itemDetails, shipping: finalShipping, otherFee: extrasTotal, 
                     income: totalAmount, cost: productCost + finalShipping, profit: totalAmount - (productCost + finalShipping), 
@@ -865,7 +873,7 @@
                     .map(t => {
                         const paid = (t.payments || []).reduce((sum, p) => sum + p.amount, 0);
                         const remain = t.total - paid;
-                        const days = moment().diff(moment(t.date, 'YYYY/MM/DD'), 'days');
+                        const days = moment().diff(txMoment(t), 'days');
                         return { ...t, paid, remain, days };
                     })
                     .sort((a, b) => {
@@ -882,7 +890,7 @@
                 if (!arTarget || !arItem || !arAmount) return alert('請填寫完整資訊');
                 
                 const record = {
-                    id: Date.now(), date: moment(arDate).format('YYYY/MM/DD'), time: moment().format('A h:mm'),
+                    id: Date.now(), date: toRecordDate(arDate), time: moment().format('A h:mm'),
                     type: '應收帳款', franchise: arTarget, content: arItem,
                     total: Number(arAmount), income: Number(arAmount), cost: 0, profit: Number(arAmount),
                     payments: [], shipping: 0, rawItems: []
@@ -1089,11 +1097,11 @@
                     if(expenseAmt > 0) txt += `\n【其他費用】\n${otherExpenseName || '雜支'}: $${expenseAmt}`;
                     const isFranchiseEquip = (otherExpenseName || '').includes('加盟器材');
                     const actualPnLExpense = isFranchiseEquip ? 0 : expenseAmt;
-                    const rec = { id: Date.now(), date: moment(date).format('YYYY/MM/DD'), time: moment().format('A h:mm'), type: '進貨/支出', franchise: '-', content: txt, rawItems: raw, shipping: 0, income: 0, cost: totalItemCost + expenseAmt, rawExpenses: actualPnLExpense, profit: -actualPnLExpense, total: -(totalItemCost + expenseAmt) }; 
+                    const rec = { id: Date.now(), date: toRecordDate(date), time: moment().format('A h:mm'), type: '進貨/支出', franchise: '-', content: txt, rawItems: raw, shipping: 0, income: 0, cost: totalItemCost + expenseAmt, rawExpenses: actualPnLExpense, profit: -actualPnLExpense, total: -(totalItemCost + expenseAmt) }; 
                     onSubmit(rec); alert('已送出進貨/支出，存檔結果會顯示在畫面上方');
                 } else {
                     let txt = '【庫存校正】\n'; let raw = []; let hasChange = false; Object.entries(stockCart).forEach(([id, d]) => { const current = inventory[id] || 0; if (d.qty !== current) { const diff = d.qty - current; const it = items.find(i => i.id === id); txt += `${it.name}: ${current} -> ${d.qty} (差: ${diff})\n`; onUpdateInv(id, diff); raw.push({ id: id, name: it.name, change: diff, old: current, new: d.qty }); hasChange = true; } });
-                    if (!hasChange) return alert('無變更'); const rec={id:Date.now(), date:moment(date).format('YYYY/MM/DD'), time:moment().format('A h:mm'), type:'庫存校正', franchise:'-', content:txt, rawItems:raw, shipping:0, income:0, cost:0, profit:0, total:0}; onSubmit(rec); alert('已校正庫存');
+                    if (!hasChange) return alert('無變更'); const rec={id:Date.now(), date:toRecordDate(date), time:moment().format('A h:mm'), type:'庫存校正', franchise:'-', content:txt, rawItems:raw, shipping:0, income:0, cost:0, profit:0, total:0}; onSubmit(rec); alert('已校正庫存');
                 }
                 setStockCart({}); setOtherExpenseName(''); setOtherExpenseAmount(''); 
             };
@@ -1101,7 +1109,7 @@
             useEffect(() => { if (mode === 'correct') { const newCart = {}; items.forEach(i => { newCart[i.id] = { qty: inventory[i.id] || 0, cost: 0 }; }); setStockCart(newCart); } else { setStockCart({}); } }, [mode, items, inventory]);
 
             const rangeStats = useMemo(() => {
-                const filteredTrans = transactions.filter(t => t.type === '進貨/支出' && moment(t.date).isBetween(startDate, endDate, 'day', '[]'));
+                const filteredTrans = transactions.filter(t => t.type === '進貨/支出' && txMoment(t).isBetween(startDate, endDate, 'day', '[]'));
                 const stats = { frozen: { total: 0, qty: 0, items: [] }, assets: { total: 0, items: [] }, expenses: { total: 0, items: [] } };
                 const frozenIds = ['cut', 'squid', 'shrimp', 'burdock'];
                 const expenseMap = {}; 
@@ -1219,11 +1227,11 @@
                 let goodsCost = 0; let equipCost = 0;
                 starterPack.forEach(p => { const item = items.find(i => i.id === p.id); let unitCost = (p.id === 'equip_set') ? 43200 : getCostOnDate(item, incomeDate); const cost = unitCost * p.qty; if(p.type === 'equipment' || p.id === 'equip_set') equipCost += cost; else goodsCost += cost; if (p.qty > 0 && p.id !== 'equip_set') onUpdateInv(p.id, -p.qty); });
                 const invisibleCost = chaileaseTax + chaileaseFee; const totalCost = setupTotal + equipCost + goodsCost + invisibleCost; const recordedRevenue = Number(totalRevenue); const finalProfit = recordedRevenue - totalCost;
-                let content = `【加盟開通】_${fName}\n入帳日期：${moment(incomeDate).format('YYYY/MM/DD')}\n`;
+                let content = `【加盟開通】_${fName}\n入帳日期：${toRecordDate(incomeDate)}\n`;
                 if (payType === 'cash') content += `付款方式：現金\n總金額：$${recordedRevenue.toLocaleString()}\n`; else if (payType === 'install_chailease') { content += `付款方式：中租分期\n發票金額(基準)：$${recordedRevenue.toLocaleString()}\n`; content += `[隱形支出] 發票稅額: $${chaileaseTax}\n中租手續費: $${chaileaseFee}\n`; } else if (payType === 'install_cash') { content += `付款方式：現金分期\n總金額：$${recordedRevenue.toLocaleString()}\n(頭款:${cashInstData.initial}, 尾款:${cashInstData.remaining})\n`; }
                 content += `------------------\n[成本結構]\n`; setupExpenses.forEach(e => content += `開辦費-${e.name}: $${e.amount}\n`); content += `器材成本: $${equipCost}\n贈品成本: $${goodsCost}\n淨利預估: $${finalProfit.toLocaleString()}`;
                 const fData = { fName, incomeDate, payType, baseRevenue: totalRevenue, chaileaseTax, chaileaseFee, setupExpenses, equipDate, frozenDate, starterPack: starterPack.map(p => ({ ...p, unitCost: p.id === 'equip_set' ? 43200 : getCostOnDate(items.find(i => i.id === p.id), incomeDate) })), equipCost, goodsCost, starterCost: equipCost + goodsCost, cashInst: payType==='install_cash' ? cashInstData : null };
-                const rec = { id: Date.now(), date: moment(incomeDate).format('YYYY/MM/DD'), time: moment().format('A h:mm'), type: '加盟', franchise: fName, content, shipping: 0, income: recordedRevenue, cost: totalCost, profit: finalProfit, total: recordedRevenue, franchiseData: fData }; 
+                const rec = { id: Date.now(), date: toRecordDate(incomeDate), time: moment().format('A h:mm'), type: '加盟', franchise: fName, content, shipping: 0, income: recordedRevenue, cost: totalCost, profit: finalProfit, total: recordedRevenue, franchiseData: fData }; 
                 onSubmit(rec); alert('加盟資料已送出，存檔結果會顯示在畫面上方'); setFName(''); setSetupExpenses([]); setEquipDate(''); setFrozenDate(''); setCashInstData({ initial: '', period: '', remaining: '', perPeriod: '' });
             };
             
@@ -1257,7 +1265,7 @@
                         <div className="space-y-4 animate-fade-in">
                             {transactions.filter(t=>t.type==='加盟').map(t=>(
                                 <div key={t.id} className="border p-4 bg-white relative shadow-sm cursor-pointer hover:bg-gray-50 rounded-lg" onClick={()=>{setSelectedFranchiseId(t.id);setTrackerData(t.franchiseData)}}>
-                                    <div className="flex justify-between items-center mb-2"><div className="flex items-center space-x-2"><span className="font-bold text-lg text-indigo-700">{t.franchise}</span><span className="text-xs bg-gray-200 px-2 py-0.5 rounded text-gray-600">{t.date}</span></div><div className="text-right"><div className="font-bold text-green-600">${t.income.toLocaleString()}</div></div></div>
+                                    <div className="flex justify-between items-center mb-2"><div className="flex items-center space-x-2"><span className="font-bold text-lg text-indigo-700">{t.franchise}</span><span className="text-xs bg-gray-200 px-2 py-0.5 rounded text-gray-600">{txMoment(t).format('YYYY/MM/DD')}</span></div><div className="text-right"><div className="font-bold text-green-600">${t.income.toLocaleString()}</div></div></div>
                                     <div className="grid grid-cols-2 gap-2 text-sm text-gray-500"><div>付款: {t.franchiseData.payType==='cash'?'現金':t.franchiseData.payType==='install_chailease'?'中租':'現金分期'}</div><div>器材: {t.franchiseData.equipDate||'未定'}</div><div>冷凍: {t.franchiseData.frozenDate||'未定'}</div></div>
                                     {!isReadonly && <button onClick={(e)=>{e.stopPropagation(); onDelete(t.id, t.type)}} className="absolute top-2 right-2 text-gray-300 hover:text-red-500 p-2"><i className="fa-solid fa-trash-can"></i></button>}
                                 </div>
@@ -1285,7 +1293,6 @@
 
 
         // ---- 依新進價重算成本：找出調價生效日之後、仍以舊進價記帳的單據 ----
-        const parseTxDate = (d) => moment(d, ['YYYY/MM/DD', 'YYYY-MM-DD']);
         const fmtMoney = (n) => Math.round(n || 0).toLocaleString();
 
         const buildCostRecalcPlan = (transactions, items, itemId) => {
@@ -1297,7 +1304,7 @@
             const oldPrice = [...(PRICE_HISTORY[itemId] || [])].reverse().find(h => h.price !== undefined)?.price;
             const rows = []; const priceWarnings = [];
             transactions.forEach(t => {
-                if (parseTxDate(t.date).isBefore(effectiveFrom, 'day')) return;
+                if (txMoment(t).isBefore(effectiveFrom, 'day')) return;
                 if ((t.costAdjustments || []).some(a => a.id === itemId)) return;
                 const newCost = getCostOnDate(setting, t.date);
                 if (newCost === oldCost) return;
@@ -1318,7 +1325,7 @@
                     if (oldPriceQty > 0) priceWarnings.push({ t, qty: oldPriceQty, oldPrice, newPrice: getPriceOnDate(setting, t.date) });
                 }
             });
-            rows.sort((a, b) => parseTxDate(a.t.date) - parseTxDate(b.t.date));
+            rows.sort((a, b) => txMoment(a.t) - txMoment(b.t));
             return { item: setting, effectiveFrom, oldCost, newCost: setting.cost, rows, priceWarnings };
         };
 
@@ -1450,7 +1457,7 @@
         const AnalyticsView = ({ transactions, items, rangeTrans, fixedPerMonth, monthsInRange, end }) => {
             const noLabels = { datalabels: { display: false } };
             const months = useMemo(() => { const arr = []; const e = moment(end).startOf('month'); for (let i = 5; i >= 0; i--) arr.push(e.clone().subtract(i, 'month').format('YYYY-MM')); return arr; }, [end]);
-            const byMonth = useMemo(() => { const map = {}; months.forEach(m => map[m] = []); transactions.forEach(t => { const m = parseTxDate(t.date).format('YYYY-MM'); if (map[m]) map[m].push(t); }); return map; }, [transactions, months]);
+            const byMonth = useMemo(() => { const map = {}; months.forEach(m => map[m] = []); transactions.forEach(t => { const m = txMoment(t).format('YYYY-MM'); if (map[m]) map[m].push(t); }); return map; }, [transactions, months]);
 
             // 1. 區間損益瀑布
             const range = useMemo(() => summarizeTrans(rangeTrans), [rangeTrans]);
@@ -1499,7 +1506,7 @@
                 transactions.filter(t => (t.type === '出貨' && t.total > 0) || t.type === '應收帳款').forEach(t => {
                     const remain = (t.total || 0) - (t.payments || []).reduce((a, p) => a + p.amount, 0);
                     if (remain <= 0) return;
-                    const days = moment().diff(parseTxDate(t.date), 'days');
+                    const days = moment().diff(txMoment(t), 'days');
                     const b = days <= 30 ? 0 : days <= 60 ? 1 : days <= 90 ? 2 : 3;
                     if (!map[t.franchise]) map[t.franchise] = [0, 0, 0, 0];
                     map[t.franchise][b] += remain;
@@ -1578,7 +1585,7 @@
             );
         };
 
-        const ReportTab = ({ transactions, onDelete, items, role, settings }) => {
+        const ReportTab = ({ transactions, onDelete, items, role, settings, onApplyTransUpdates }) => {
             const isReadonly = role === ROLES.VIEWER;
             const [viewMode, setViewMode] = useState('dashboard');
             const [reportCategory, setReportCategory] = useState('all');
@@ -1589,7 +1596,28 @@
             const expenseChartRef = useRef(null); const franchiseChartRef = useRef(null);
             const expenseChart = useRef(null); const franchiseChart = useRef(null);
 
-            const allTransInRange = useMemo(() => transactions.filter(t => moment(t.date).isBetween(start, end, 'day', '[]')), [transactions, start, end]);
+            const allTransInRange = useMemo(() => transactions.filter(t => txMoment(t).isBetween(start, end, 'day', '[]')), [transactions, start, end]);
+            const invalidDateTrans = useMemo(() => transactions.filter(t => !hasValidDate(t)), [transactions]);
+            // 近 30 天新增、但日期不在目前區間的紀錄
+            const recentOutside = useMemo(() => transactions.filter(t => moment().diff(moment(Number(t.id)), 'days') <= 30 && !txMoment(t).isBetween(start, end, 'day', '[]')), [transactions, start, end]);
+            const setRange = (key) => {
+                if (key === 'month') { setStart(moment().startOf('month').format('YYYY-MM-DD')); setEnd(moment().endOf('month').format('YYYY-MM-DD')); }
+                else if (key === 'last') { setStart(moment().subtract(1, 'month').startOf('month').format('YYYY-MM-DD')); setEnd(moment().subtract(1, 'month').endOf('month').format('YYYY-MM-DD')); }
+                else if (key === 'year') { setStart(moment().startOf('year').format('YYYY-MM-DD')); setEnd(moment().endOf('year').format('YYYY-MM-DD')); }
+                else if (key === 'all') {
+                    const ms = transactions.map(txMoment).filter(m => m.isValid());
+                    setStart((ms.length ? moment.min(ms) : moment()).format('YYYY-MM-DD'));
+                    setEnd(moment.max([moment(), ...ms]).format('YYYY-MM-DD'));
+                }
+            };
+            const fixInvalidDates = async () => {
+                if (isReadonly || invalidDateTrans.length === 0) return;
+                if (!confirm(`將 ${invalidDateTrans.length} 筆日期無效的資料，日期改為其建立日？`)) return;
+                try {
+                    const ok = await onApplyTransUpdates(invalidDateTrans.map(t => ({ id: t.id, fields: { date: txMoment(t).format('YYYY/MM/DD') } })));
+                    if (ok) alert('已修正日期');
+                } catch (e) { console.error(e); alert('修正失敗: ' + e.message); }
+            };
             const displayTrans = useMemo(() => {
                 if (filterType === 'recent') return [...transactions].sort((a, b) => b.id - a.id).slice(0, 30);
                 let list = allTransInRange;
@@ -1638,7 +1666,7 @@
                 const totals = { shipment: { rev: 0, cost: 0, profit: 0 }, direct: { rev: 0, cost: 0, profit: 0 }, franchise: { rev: 0, cost: 0, profit: 0 } };
 
                 allTransInRange.forEach(t => {
-                    const month = moment(t.date).format('YYYY-MM');
+                    const month = txMoment(t).format('YYYY-MM');
                     if (!grouped[month]) { grouped[month] = { shipment: { rev: 0, cost: 0, profit: 0, items: [] }, direct: { rev: 0, cost: 0, profit: 0, items: [] }, franchise: { rev: 0, cost: 0, profit: 0, items: [] } }; }
 
                     if (t.type === '出貨') {
@@ -1727,7 +1755,22 @@
                         <input type="date" value={start} onChange={e => setStart(e.target.value)} className="border p-1 rounded" />
                         <span>to</span>
                         <input type="date" value={end} onChange={e => setEnd(e.target.value)} className="border p-1 rounded" />
+                        <div className="flex flex-wrap gap-1">
+                            {[['month', '本月'], ['last', '上月'], ['year', '今年'], ['all', '全部期間']].map(([k, l]) => <button key={k} onClick={() => setRange(k)} className="text-xs border rounded px-2 py-1 bg-gray-50 hover:bg-indigo-50">{l}</button>)}
+                        </div>
                     </div>
+                    {invalidDateTrans.length > 0 && (
+                        <div className="bg-red-50 border border-red-200 text-red-700 p-3 rounded text-sm flex flex-wrap justify-between items-center gap-2">
+                            <div><i className="fa-solid fa-triangle-exclamation mr-1"></i>有 {invalidDateTrans.length} 筆資料登錄時日期欄空白（{invalidDateTrans.slice(0, 3).map(t => `${t.type} ${t.franchise !== '-' ? t.franchise : ''}`).join('、')}{invalidDateTrans.length > 3 ? '…' : ''}），目前暫以「建立日」計入報表。</div>
+                            {!isReadonly && <button onClick={fixInvalidDates} className="bg-red-600 text-white px-3 py-1 rounded text-xs font-bold">一鍵修正為建立日</button>}
+                        </div>
+                    )}
+                    {recentOutside.length > 0 && (
+                        <div className="bg-orange-50 border border-orange-200 text-orange-800 p-3 rounded text-sm flex flex-wrap justify-between items-center gap-2">
+                            <div><i className="fa-solid fa-circle-info mr-1"></i>近 30 天新增的 {recentOutside.length} 筆資料，日期不在目前區間（{recentOutside.slice(0, 3).map(t => `${t.type} ${txMoment(t).format('YYYY/MM/DD')}`).join('、')}{recentOutside.length > 3 ? '…' : ''}），所以沒有算進下方數字。</div>
+                            <button onClick={() => setRange('all')} className="bg-orange-500 text-white px-3 py-1 rounded text-xs font-bold">顯示全部期間</button>
+                        </div>
+                    )}
                     
                     {viewMode === 'charts' ? (
                         <AnalyticsView transactions={transactions} items={items} rangeTrans={allTransInRange} fixedPerMonth={allFixedCosts} monthsInRange={monthsInRange} end={end} />
@@ -1788,7 +1831,7 @@
                                             <div className="flex justify-between font-bold mb-1">
                                                 <span className="flex items-center gap-2">
                                                     <span className={`px-2 py-0.5 rounded text-white text-xs ${t.type==='出貨'?'bg-blue-500':t.type==='直營報表'?'bg-cyan-500':t.type==='加盟'?'bg-indigo-500':t.type==='進貨/支出'?'bg-red-500':t.type==='應收帳款'?'bg-purple-500':'bg-gray-500'}`}>{t.type}</span>
-                                                    <span>{t.date}</span>
+                                                    <span>{txMoment(t).format('YYYY/MM/DD')}{!hasValidDate(t) && <span className="text-[10px] text-red-500 ml-1">(日期空白，以建立日計)</span>}</span>
                                                     <span className="text-gray-600">- {t.franchise}</span>
                                                     {t.createdBy && <span className="text-[10px] text-gray-400 ml-2">({t.createdBy.split('@')[0]})</span>}
                                                     <span className={`text-[10px] px-1 rounded ${t._pending ? 'bg-orange-100 text-orange-700' : 'bg-green-50 text-green-600'}`}>{t._pending ? '同步中…' : '已存雲端'}</span>
