@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>加盟進銷存管理系統 Pro v66 (權限協作版)</title>
+    <title>加盟進銷存管理系統 Pro v67 (權限協作版)</title>
     
     <!-- 修正：加入空白 favicon 以消除 404 錯誤 -->
     <link rel="icon" href="data:,">
@@ -93,7 +93,11 @@
         };
 
         // v66 價格遷移：在 Firestore 設定載入後自動修正價格
-        const MIGRATION_VERSION = 'v66b';
+        // v67：鱈花枝自 2026/09/01 起工廠進價改為 130元/斤 (每箱30斤 = 3900)，出貨價維持 5700
+        const MIGRATION_VERSION = 'v67';
+        const V67_PRICE_UPDATES = {
+            'cut': { cost: 3900 }
+        };
         const V66_PRICE_UPDATES = {
             'cut': { cost: 3750 },
             'cucumber': { cost: 400, price: 400 },
@@ -105,14 +109,33 @@
         };
         const V66_NEW_ITEM = { id: 'choco_rice', name: '巧克力米', category: '其他', cost: 175, price: 175, unit: '罐' };
 
+        // 歷史進價：單據日期在 until(含) 之前時，改用舊進價；之後則用「設定」頁的目前進價
+        const COST_HISTORY = {
+            'cut': [{ until: '2026-08-31', cost: 3750 }] // 鱈花枝 125元/斤 x 30斤
+        };
+        const getCostOnDate = (item, date) => {
+            if (!item) return 0;
+            const history = COST_HISTORY[item.id];
+            if (history && date) {
+                const d = moment(date, ['YYYY-MM-DD', 'YYYY/MM/DD']);
+                const hit = history.find(h => d.isSameOrBefore(moment(h.until, 'YYYY-MM-DD'), 'day'));
+                if (hit) return hit.cost;
+            }
+            return item.cost;
+        };
+
         const migrateSettingsV66 = async (settingsRef, currentData) => {
             if (currentData.migrationVersion === MIGRATION_VERSION) return currentData;
 
             const newItems = [...(currentData.items || [])];
             let changed = false;
 
+            // 已完成 v66b 的資料只套用 v67 調整，避免覆蓋之後在「設定」頁手動改過的價格
+            const priceUpdates = currentData.migrationVersion === 'v66b'
+                ? V67_PRICE_UPDATES
+                : { ...V66_PRICE_UPDATES, ...V67_PRICE_UPDATES };
             newItems.forEach((item, idx) => {
-                const update = V66_PRICE_UPDATES[item.id];
+                const update = priceUpdates[item.id];
                 if (update) {
                     Object.keys(update).forEach(key => {
                         if (newItems[idx][key] !== update[key]) {
@@ -147,7 +170,7 @@
             if (changed) {
                 const updatedData = { ...currentData, items: newItems, starterPack: newStarterPack, constants: newConstants, migrationVersion: MIGRATION_VERSION };
                 await settingsRef.set(updatedData);
-                console.log('v66b 設定遷移完成');
+                console.log(`${MIGRATION_VERSION} 設定遷移完成`);
                 return updatedData;
             }
 
@@ -157,7 +180,7 @@
 
         const DEFAULT_SETTINGS = {
             items: [
-                { id: 'cut', name: '花枝', category: '箱裝', cost: 3750, price: 5700, unit: '箱', isBox: true },
+                { id: 'cut', name: '花枝', category: '箱裝', cost: 3900, price: 5700, unit: '箱', isBox: true },
                 { id: 'squid', name: '墨魚', category: '箱裝', cost: 2640, price: 4200, unit: '箱', isBox: true },
                 { id: 'shrimp', name: '蝦球', category: '箱裝', cost: 4500, price: 6600, unit: '箱', isBox: true },
                 { id: 'burdock', name: '牛蒡', category: '箱裝', cost: 2040, price: 3600, unit: '箱', isBox: true },
@@ -401,7 +424,7 @@
                 <div className="min-h-screen max-w-5xl mx-auto bg-white shadow-xl flex flex-col">
                     <div className="bg-slate-800 text-white p-4 sticky top-0 z-50 shadow-md">
                         <div className="flex justify-between items-center mb-2">
-                            <h1 className="text-lg font-bold"><i className="fa-solid fa-cloud mr-2 text-green-400"></i>加盟系統 Pro v66 <span className="text-xs bg-purple-500 px-1 rounded ml-1">多人協作版</span></h1>
+                            <h1 className="text-lg font-bold"><i className="fa-solid fa-cloud mr-2 text-green-400"></i>加盟系統 Pro v67 <span className="text-xs bg-purple-500 px-1 rounded ml-1">多人協作版</span></h1>
                             <div className="flex items-center space-x-2">
                                 <span className="text-xs text-slate-300 hidden md:inline">{user.email} ({role})</span>
                                 <button onClick={() => firebase.auth().signOut()} className="text-xs bg-slate-700 px-2 py-1 rounded hover:bg-slate-600">登出</button>
@@ -531,6 +554,7 @@
             };
 
             const processSubmission = (pDate, pIncome, pExpense, pNote, pItems) => {
+                pItems = pItems.map(item => ({ ...item, cost: getCostOnDate(item, pDate) }));
                 const totalCostOfGoods = pItems.reduce((sum, item) => sum + (item.cost * item.qty), 0);
                 const totalCost = totalCostOfGoods + pExpense;
                 const profit = pIncome - totalCost;
@@ -775,7 +799,7 @@
                 let productCost = 0;
                 itemDetails.forEach(item => { 
                     const originalItem = items.find(i => i.id === item.id);
-                    productCost += (originalItem ? originalItem.cost : 0) * item.qty; 
+                    productCost += getCostOnDate(originalItem, orderDate) * item.qty; 
                     onUpdateInv(item.id, -item.qty); 
                 });
                 
@@ -909,7 +933,7 @@
                                 ))}
                             </div>
                             <div className="sticky bottom-4 bg-slate-800 text-white p-4 rounded-lg flex justify-between shadow-xl">
-                                <div className="font-bold">總計: ${isTransfer ? (prepareOrderData().itemDetails.reduce((a,b)=>a+(items.find(i=>i.id===b.id).cost*b.qty),0) + Number(shippingFee)).toLocaleString() : (prepareOrderData().productTotal + extraItems.reduce((a,b)=>a+b.amount,0) + Number(shippingFee)).toLocaleString()}</div>
+                                <div className="font-bold">總計: ${isTransfer ? (prepareOrderData().itemDetails.reduce((a,b)=>a+(getCostOnDate(items.find(i=>i.id===b.id), orderDate)*b.qty),0) + Number(shippingFee)).toLocaleString() : (prepareOrderData().productTotal + extraItems.reduce((a,b)=>a+b.amount,0) + Number(shippingFee)).toLocaleString()}</div>
                                 <div className="space-x-3 flex">
                                     <button onClick={copyToClipboard} className="bg-green-600 px-3 py-2 rounded text-sm flex items-center"><i className="fa-regular fa-copy mr-1"></i> 複製</button>
                                     {!isReadonly && <button onClick={handleSubmit} className={`${isTransfer?'bg-orange-500':'bg-blue-500'} px-4 py-2 rounded font-bold text-sm`}>{isTransfer ? '確認調撥' : '確認出貨'}</button>}
@@ -1014,7 +1038,7 @@
             const [endDate, setEndDate] = useState(moment().endOf('month').format('YYYY-MM-DD'));
             const [dashboardView, setDashboardView] = useState('frozen');
 
-            const updateCart = (id, f, v) => { setStockCart(prev => { const cur = prev[id] || { qty: 0, cost: 0, currentInv: inventory[id] || 0 }; let nc = cur.cost; if(f==='qty'&&!nc && mode==='purchase'){const it=items.find(i=>i.id===id); if(it)nc=it.cost;} if(f==='cost')nc=Number(v); return {...prev, [id]:{...cur, qty:f==='qty'?Number(v):cur.qty, cost:nc}}; }); };
+            const updateCart = (id, f, v) => { setStockCart(prev => { const cur = prev[id] || { qty: 0, cost: 0, currentInv: inventory[id] || 0 }; let nc = cur.cost; if(f==='qty'&&!nc && mode==='purchase'){const it=items.find(i=>i.id===id); if(it)nc=getCostOnDate(it, date);} if(f==='cost')nc=Number(v); return {...prev, [id]:{...cur, qty:f==='qty'?Number(v):cur.qty, cost:nc}}; }); };
             
             const handleStockIn = () => { 
                 if(isReadonly) return;
@@ -1154,7 +1178,7 @@
                 if(isReadonly) return;
                 if(!fName) return alert('請輸入店名'); 
                 let goodsCost = 0; let equipCost = 0;
-                starterPack.forEach(p => { const item = items.find(i => i.id === p.id); let unitCost = (p.id === 'equip_set') ? 43200 : (item ? item.cost : 0); const cost = unitCost * p.qty; if(p.type === 'equipment' || p.id === 'equip_set') equipCost += cost; else goodsCost += cost; if (p.qty > 0 && p.id !== 'equip_set') onUpdateInv(p.id, -p.qty); });
+                starterPack.forEach(p => { const item = items.find(i => i.id === p.id); let unitCost = (p.id === 'equip_set') ? 43200 : getCostOnDate(item, incomeDate); const cost = unitCost * p.qty; if(p.type === 'equipment' || p.id === 'equip_set') equipCost += cost; else goodsCost += cost; if (p.qty > 0 && p.id !== 'equip_set') onUpdateInv(p.id, -p.qty); });
                 const invisibleCost = chaileaseTax + chaileaseFee; const totalCost = setupTotal + equipCost + goodsCost + invisibleCost; const recordedRevenue = Number(totalRevenue); const finalProfit = recordedRevenue - totalCost;
                 let content = `【加盟開通】_${fName}\n入帳日期：${moment(incomeDate).format('YYYY/MM/DD')}\n`;
                 if (payType === 'cash') content += `付款方式：現金\n總金額：$${recordedRevenue.toLocaleString()}\n`; else if (payType === 'install_chailease') { content += `付款方式：中租分期\n發票金額(基準)：$${recordedRevenue.toLocaleString()}\n`; content += `[隱形支出] 發票稅額: $${chaileaseTax}\n中租手續費: $${chaileaseFee}\n`; } else if (payType === 'install_cash') { content += `付款方式：現金分期\n總金額：$${recordedRevenue.toLocaleString()}\n(頭款:${cashInstData.initial}, 尾款:${cashInstData.remaining})\n`; }
