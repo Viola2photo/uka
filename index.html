@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>加盟進銷存管理系統 Pro v70 (權限協作版)</title>
+    <title>加盟進銷存管理系統 Pro v71 (權限協作版)</title>
     
     <!-- 修正：加入空白 favicon 以消除 404 錯誤 -->
     <link rel="icon" href="data:,">
@@ -139,6 +139,101 @@
         // 單據日期；舊資料日期無效時改用建立時間 (id)，確保每一筆都進入報表與損益計算
         const txMoment = (t) => { const m = moment(t && t.date, DATE_FORMATS, true); return m.isValid() ? m : moment(Number(t && t.id) || undefined); };
         const hasValidDate = (t) => moment(t && t.date, DATE_FORMATS, true).isValid();
+
+        // ---- 支出項目規範（在「進貨管理 → 其他雜支」以下列名稱登錄）----
+        // 貨款支出：工廠月結付款，抵銷「上個月」四大冷凍品進貨，不計入損益（成本已在出貨時計入）
+        // 貨款差額：工廠帳單與系統進貨紀錄的差異，月底結帳時登錄，計入損益（可為負數）
+        // 公司支出_運費：物流帳單，先扣除「上個月」出貨＋調撥單上已計的運費，剩餘才計入損益
+        const EXPENSE_PRESETS = ['貨款支出', '貨款差額', '公司支出_運費'];
+        const FROZEN_IDS = ['cut', 'squid', 'shrimp', 'burdock'];
+        const classifyExpense = (name) => {
+            if (!name) return null;
+            if (name.includes('貨款支出')) return 'apPayment';
+            if (name.includes('貨款差額')) return 'apDiff';
+            if (name.includes('公司支出') && name.includes('運費')) return 'freightBill';
+            return null;
+        };
+        const parseOtherExpense = (t) => {
+            const m = (t.content || '').match(/【其他費用】\n(.*?): \$(-?[\d,.]+)/);
+            return m ? { name: m[1].trim(), amount: parseFloat(m[2].replace(/,/g, '')) || 0 } : null;
+        };
+        const monthOf = (t) => txMoment(t).format('YYYY-MM');
+        const prevMonth = (ym) => moment(ym + '-01', 'YYYY-MM-DD').subtract(1, 'month').format('YYYY-MM');
+        const orderFreightOfMonth = (list, ym) => list.filter(t => (t.type === '出貨' || t.type === '調撥') && monthOf(t) === ym).reduce((a, t) => a + (Number(t.shipping) || 0), 0);
+        const factoryPurchaseOfMonth = (list, ym) => list.filter(t => t.type === '進貨/支出' && monthOf(t) === ym).reduce((a, t) => a + (t.rawItems || []).filter(ri => FROZEN_IDS.includes(ri.id)).reduce((x, ri) => x + (Number(ri.cost) || 0) * (Number(ri.qty) || 0), 0), 0);
+
+        // 依規範重算每筆支出的「計入損益金額」(rawExpenses)，原始資料不變
+        const applyExpenseRules = (list) => {
+            const pools = {}; const freight = {};
+            list.filter(t => t.type === '進貨/支出' && classifyExpense((parseOtherExpense(t) || {}).name) === 'freightBill')
+                .sort((a, b) => (txMoment(a) - txMoment(b)) || (a.id - b.id))
+                .forEach(t => {
+                    const ym = monthOf(t);
+                    if (pools[ym] === undefined) pools[ym] = orderFreightOfMonth(list, prevMonth(ym));
+                    const amt = parseOtherExpense(t).amount;
+                    const deducted = Math.min(Math.max(amt, 0), pools[ym]);
+                    pools[ym] -= deducted;
+                    freight[t.id] = { pnl: amt - deducted, deducted };
+                });
+            return list.map(t => {
+                if (t.type !== '進貨/支出') return t;
+                const exp = parseOtherExpense(t);
+                const rule = classifyExpense(exp && exp.name);
+                if (!rule) return t;
+                const base = { ...t, _rule: rule, _expName: exp.name, _expAmt: exp.amount };
+                if (rule === 'apPayment') return { ...base, rawExpenses: 0 };
+                if (rule === 'apDiff') return { ...base, rawExpenses: exp.amount };
+                return { ...base, rawExpenses: freight[t.id].pnl, _freightDeducted: freight[t.id].deducted };
+            });
+        };
+
+        // 某付款月份的月結對帳
+        const buildSettlement = (list, payMonth) => {
+            const purchaseMonth = prevMonth(payMonth);
+            const inMonth = list.filter(t => t.type === '進貨/支出' && t._rule && monthOf(t) === payMonth);
+            const sum = (rule) => inMonth.filter(t => t._rule === rule).reduce((a, t) => a + t._expAmt, 0);
+            const purchase = factoryPurchaseOfMonth(list, purchaseMonth);
+            const paid = sum('apPayment'); const diff = sum('apDiff');
+            const freightBill = sum('freightBill');
+            const orderFreight = orderFreightOfMonth(list, purchaseMonth);
+            const freightPnl = inMonth.filter(t => t._rule === 'freightBill').reduce((a, t) => a + t.rawExpenses, 0);
+            return { payMonth, purchaseMonth, purchase, paid, diff, payable: purchase + diff, unpaid: purchase + diff - paid,
+                paidCount: inMonth.filter(t => t._rule === 'apPayment').length, freightBill, orderFreight, freightPnl, freightDeducted: freightBill - freightPnl };
+        };
+
+        const SettlementPanel = ({ transactions }) => {
+            const [payMonth, setPayMonth] = useState(moment().format('YYYY-MM'));
+            const st = useMemo(() => buildSettlement(transactions, payMonth), [transactions, payMonth]);
+            const m = (n) => `$${Math.round(n).toLocaleString()}`;
+            const settled = Math.round(st.unpaid) === 0;
+            return (
+                <div className="bg-white p-4 shadow rounded space-y-3">
+                    <div className="flex flex-wrap justify-between items-center gap-2 border-b pb-2">
+                        <h4 className="font-bold text-slate-700"><i className="fa-solid fa-scale-balanced mr-2 text-indigo-500"></i>工廠貨款／運費 月結對帳</h4>
+                        <label className="text-xs text-gray-500">付款月份 <input type="month" value={payMonth} onChange={e => e.target.value && setPayMonth(e.target.value)} className="border rounded p-1 text-sm" /></label>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                        <div className="bg-indigo-50 rounded p-3 space-y-1">
+                            <div className="font-bold text-indigo-800 mb-1">貨款（{st.payMonth} 付 {st.purchaseMonth} 的貨）</div>
+                            <div className="flex justify-between"><span>{st.purchaseMonth} 工廠進貨（四大冷凍品）</span><span className="font-bold">{m(st.purchase)}</span></div>
+                            <div className="flex justify-between"><span>＋ 貨款差額（計入損益）</span><span className="font-bold">{m(st.diff)}</span></div>
+                            <div className="flex justify-between border-t pt-1"><span>應付</span><span className="font-bold">{m(st.payable)}</span></div>
+                            <div className="flex justify-between"><span>－ 已付貨款支出（{st.paidCount} 筆，不計損益）</span><span className="font-bold text-green-700">{m(st.paid)}</span></div>
+                            <div className={`flex justify-between border-t pt-1 font-bold ${settled ? 'text-green-700' : 'text-red-600'}`}><span>{settled ? '已對平' : (st.unpaid > 0 ? '尚未付清' : '已付超過應付')}</span><span>{settled ? '✓' : m(Math.abs(st.unpaid))}</span></div>
+                            {!settled && st.paid > 0 && <div className="text-xs text-gray-600 bg-white rounded p-2">若 {st.purchaseMonth} 的工廠帳單已全部付清，月底請以「貨款差額」登錄 <b>{m(st.paid - st.purchase - st.diff)}</b>（已付 − 系統進貨 − 已登差額）。</div>}
+                        </div>
+                        <div className="bg-orange-50 rounded p-3 space-y-1">
+                            <div className="font-bold text-orange-800 mb-1">運費（{st.payMonth} 帳單）</div>
+                            <div className="flex justify-between"><span>公司支出_運費 帳單合計</span><span className="font-bold">{m(st.freightBill)}</span></div>
+                            <div className="flex justify-between"><span>－ {st.purchaseMonth} 出貨＋調撥單已計運費</span><span className="font-bold">{m(st.orderFreight)}</span></div>
+                            <div className="flex justify-between border-t pt-1 font-bold text-red-600"><span>計入損益（其他寄送方式）</span><span>{m(st.freightPnl)}</span></div>
+                            {st.freightBill > 0 && st.freightBill < st.orderFreight && <div className="text-xs text-gray-600">帳單少於訂貨運費，差額 {m(st.orderFreight - st.freightBill)} 不另計。</div>}
+                        </div>
+                    </div>
+                    <div className="text-[11px] text-gray-400">登錄方式：在下方「其他雜支登錄」的項目選 貨款支出／貨款差額／公司支出_運費。貨款可分多筆匯出，同月份會自動加總。</div>
+                </div>
+            );
+        };
 
         const migrateSettingsV66 = async (settingsRef, currentData) => {
             if (currentData.migrationVersion === MIGRATION_VERSION) return currentData;
@@ -437,8 +532,10 @@
                 return Array.from(set);
             }, [transactions]);
 
+            const ruledTransactions = useMemo(() => applyExpenseRules(transactions), [transactions]);
+
             const uniqueExpenseNames = useMemo(() => {
-                const set = new Set();
+                const set = new Set(EXPENSE_PRESETS);
                 transactions.forEach(t => { if(t.type === '進貨/支出' && t.content) { const match = t.content.match(/【其他費用】\n(.*?):/); if(match && match[1]) set.add(match[1].trim()); } });
                 return Array.from(set);
             }, [transactions]);
@@ -465,7 +562,7 @@
                 <div className="min-h-screen max-w-5xl mx-auto bg-white shadow-xl flex flex-col">
                     <div className="bg-slate-800 text-white p-4 sticky top-0 z-50 shadow-md">
                         <div className="flex justify-between items-center mb-2">
-                            <h1 className="text-lg font-bold"><i className="fa-solid fa-cloud mr-2 text-green-400"></i>加盟系統 Pro v70 <span className="text-xs bg-purple-500 px-1 rounded ml-1">多人協作版</span></h1>
+                            <h1 className="text-lg font-bold"><i className="fa-solid fa-cloud mr-2 text-green-400"></i>加盟系統 Pro v71 <span className="text-xs bg-purple-500 px-1 rounded ml-1">多人協作版</span></h1>
                             <div className="flex items-center space-x-2">
                                 <span className="text-xs text-slate-300 hidden md:inline">{user.email} ({role})</span>
                                 <button onClick={() => firebase.auth().signOut()} className="text-xs bg-slate-700 px-2 py-1 rounded hover:bg-slate-600">登出</button>
@@ -495,10 +592,10 @@
                         {!loading && appSettings && (
                             <div className="animate-fade-in">
                                 {activeTab === 'order' && <OrderTab items={appSettings.items} inventory={inventory} onSubmit={addTransaction} onUpdateTrans={updateTransaction} transactions={transactions} onUpdateInv={updateInventory} franchises={uniqueFranchises} genReceipt={generateFormattedReceipt} role={role} />}
-                                {activeTab === 'stockIn' && <StockInTab items={appSettings.items} inventory={inventory} onSubmit={addTransaction} onUpdateInv={updateInventory} expenseNames={uniqueExpenseNames} transactions={transactions} role={role} />}
+                                {activeTab === 'stockIn' && <StockInTab items={appSettings.items} inventory={inventory} onSubmit={addTransaction} onUpdateInv={updateInventory} expenseNames={uniqueExpenseNames} transactions={ruledTransactions} role={role} />}
                                 {activeTab === 'direct' && <DirectStoreTab items={appSettings.items} inventory={inventory} onSubmit={addTransaction} onUpdateInv={updateInventory} transactions={transactions} onDelete={deleteTransaction} role={role} settings={appSettings} />}
                                 {activeTab === 'franchise' && <FranchiseTab items={appSettings.items} inventory={inventory} onSubmit={addTransaction} onUpdateInv={updateInventory} onUpdateTrans={updateTransaction} onDelete={deleteTransaction} transactions={transactions} franchises={uniqueFranchises} settings={appSettings} genReceipt={generateFormattedReceipt} role={role} />}
-                                {activeTab === 'report' && <ReportTab transactions={transactions} onDelete={deleteTransaction} items={appSettings.items} role={role} settings={appSettings} onApplyTransUpdates={applyTransactionUpdates} />}
+                                {activeTab === 'report' && <ReportTab transactions={ruledTransactions} onDelete={deleteTransaction} items={appSettings.items} role={role} settings={appSettings} onApplyTransUpdates={applyTransactionUpdates} />}
                                 {activeTab === 'settings' && <SettingsTab settings={appSettings} onSave={saveSettings} role={role} transactions={transactions} onApplyTransUpdates={applyTransactionUpdates} />}
                             </div>
                         )}
@@ -1094,9 +1191,12 @@
                     Object.entries(stockCart).forEach(([id,d])=>{ if(d.qty > 0){ const it=items.find(i=>i.id===id); txt+=`${it.name} x ${d.qty} (單價$${d.cost})\n`; onUpdateInv(id,d.qty); raw.push({id: it.id, name:it.name, qty:d.qty, cost:d.cost}); totalItemCost += (d.cost * d.qty); } });
                     const expenseAmt = Number(otherExpenseAmount) || 0;
                     if(raw.length === 0 && expenseAmt === 0) return alert('無內容');
-                    if(expenseAmt > 0) txt += `\n【其他費用】\n${otherExpenseName || '雜支'}: $${expenseAmt}`;
+                    const expRule = classifyExpense(otherExpenseName || '');
+                    if(expenseAmt < 0 && expRule !== 'apDiff') return alert('只有「貨款差額」可以輸入負數');
+                    if(expenseAmt !== 0) txt += `\n【其他費用】\n${otherExpenseName || '雜支'}: $${expenseAmt}`;
                     const isFranchiseEquip = (otherExpenseName || '').includes('加盟器材');
-                    const actualPnLExpense = isFranchiseEquip ? 0 : expenseAmt;
+                    // 貨款支出不計損益；運費帳單的扣除在報表依上月運費動態計算
+                    const actualPnLExpense = (isFranchiseEquip || expRule === 'apPayment') ? 0 : expenseAmt;
                     const rec = { id: Date.now(), date: toRecordDate(date), time: moment().format('A h:mm'), type: '進貨/支出', franchise: '-', content: txt, rawItems: raw, shipping: 0, income: 0, cost: totalItemCost + expenseAmt, rawExpenses: actualPnLExpense, profit: -actualPnLExpense, total: -(totalItemCost + expenseAmt) }; 
                     onSubmit(rec); alert('已送出進貨/支出，存檔結果會顯示在畫面上方');
                 } else {
@@ -1116,10 +1216,11 @@
                 filteredTrans.forEach(t => {
                     if(t.rawItems) { t.rawItems.forEach(ri => { const amt = ri.cost * ri.qty; if(frozenIds.includes(ri.id)) { stats.frozen.total += amt; stats.frozen.qty += ri.qty; stats.frozen.items.push({ name: ri.name, val: `${ri.qty}箱 ($${amt.toLocaleString()})`, date: t.date }); } else { stats.assets.total += amt; stats.assets.items.push({ name: ri.name, val: `${ri.qty}${items.find(i=>i.id===ri.id)?.unit} ($${amt.toLocaleString()})`, date: t.date }); } }); }
                     let expName = ''; let expAmt = 0;
-                    if(t.content && t.content.includes('【其他費用】')) { const match = t.content.match(/【其他費用】\n(.*?): \$([\d,]+)/); if(match) { expName = match[1].trim(); expAmt = parseFloat(match[2].replace(/,/g, '')); } } 
+                    if (t._rule) { if (t._rule !== 'apPayment' && t.rawExpenses) { expName = t._rule === 'freightBill' ? `${t._expName}(扣訂貨運費後)` : t._expName; expAmt = t.rawExpenses; } }
+                    else if(t.content && t.content.includes('【其他費用】')) { const match = t.content.match(/【其他費用】\n(.*?): \$([\d,]+)/); if(match) { expName = match[1].trim(); expAmt = parseFloat(match[2].replace(/,/g, '')); } } 
                     else if (t.content && t.content.includes('雜支:')) { const match = t.content.match(/雜支: (.*?) \$([\d,]+)/); if(match) { expName = match[1].trim(); expAmt = parseFloat(match[2].replace(/,/g, '')); } }
                     if (!expName && t.rawExpenses > 0) { expName = "一般雜支(未分類)"; expAmt = t.rawExpenses; }
-                    if (expAmt > 0) { if (expName.includes('加盟器材')) { stats.assets.total += expAmt; stats.assets.items.push({ name: expName, val: `$${expAmt.toLocaleString()}`, date: t.date }); } else { const key = expName.substring(0, 3); if (!expenseMap[key]) expenseMap[key] = { name: key + '...', total: 0, count: 0 }; expenseMap[key].total += expAmt; expenseMap[key].count += 1; expenseMap[key].fullName = expName; } }
+                    if (expAmt !== 0) { if (expName.includes('加盟器材')) { stats.assets.total += expAmt; stats.assets.items.push({ name: expName, val: `$${expAmt.toLocaleString()}`, date: t.date }); } else { const key = expName.substring(0, 3); if (!expenseMap[key]) expenseMap[key] = { name: key + '...', total: 0, count: 0 }; expenseMap[key].total += expAmt; expenseMap[key].count += 1; expenseMap[key].fullName = expName; } }
                 });
                 stats.expenses.items = Object.values(expenseMap).map(g => ({ name: g.count > 1 ? `${g.name} (合併${g.count}筆)` : g.fullName, val: `$${g.total.toLocaleString()}`, total: g.total })).sort((a,b) => b.total - a.total);
                 stats.expenses.total = stats.expenses.items.reduce((a,b) => a + b.total, 0);
@@ -1135,6 +1236,7 @@
                         <button onClick={()=>setMode('purchase')} className={`flex-1 py-2 rounded text-sm font-bold ${mode==='purchase'?'bg-white shadow text-blue-600':''}`}>進貨/資產登入</button>
                         <button onClick={()=>setMode('correct')} className={`flex-1 py-2 rounded text-sm font-bold ${mode==='correct'?'bg-white shadow text-red-600':''}`}>庫存校正</button>
                     </div>
+                    {mode === 'purchase' && <SettlementPanel transactions={transactions} />}
 
                     <div className="bg-white p-4 shadow">
                         <div className="mb-4 grid grid-cols-2 gap-4">
@@ -1443,7 +1545,7 @@
                 if (t.type === '出貨') { const fr = Number(t.shipping) || 0; s.shipRev += t.income || 0; s.shipFreight += fr; s.shipGoods += (t.cost || 0) - fr; }
                 else if (t.type === '調撥') s.transfer += t.cost || 0;
                 else if (t.type === '加盟') { s.franRev += t.income || 0; s.franCost += t.cost || 0; }
-                else if (t.type === '進貨/支出') { if (t.rawExpenses > 0) s.misc += t.rawExpenses; else { const m = (t.content || '').match(/雜支:.*?\$([\d,]+)/); if (m) s.misc += parseFloat(m[1].replace(/,/g, '')); } }
+                else if (t.type === '進貨/支出') { if (t._rule || t.rawExpenses > 0) s.misc += t.rawExpenses || 0; else { const m = (t.content || '').match(/雜支:.*?\$([\d,]+)/); if (m) s.misc += parseFloat(m[1].replace(/,/g, '')); } }
                 else if (t.type === '直營報表') { const e = t.rawExpenses || 0; s.directRev += t.income || 0; s.directExp += e; s.directGoods += (t.cost || 0) - e; }
             });
             s.rev = s.shipRev + s.directRev + s.franRev;
@@ -1451,8 +1553,6 @@
             s.net = s.rev - s.varCost;
             return s;
         };
-
-        const FROZEN_IDS = ['cut', 'squid', 'shrimp', 'burdock'];
 
         const AnalyticsView = ({ transactions, items, rangeTrans, fixedPerMonth, monthsInRange, end }) => {
             const noLabels = { datalabels: { display: false } };
@@ -1636,7 +1736,7 @@
                     if (t.type === '出貨') { s.shipmentRev += t.income; s.shipmentCost += t.cost; } 
                     else if (t.type === '調撥') { s.transferCost += t.cost; }
                     else if (t.type === '加盟') { s.franchiseRev += t.income; s.franchiseCost += t.cost; s.franchiseProfit += t.profit; if(t.franchiseData && t.franchiseData.chaileaseTax) { s.franchiseTaxTotal += t.franchiseData.chaileaseTax; } } 
-                    else if (t.type === '進貨/支出') { if (t.rawExpenses > 0) { s.expenses += t.rawExpenses; } else { const match = t.content.match(/雜支:.*?\$([\d,]+)/); if (match) s.expenses += parseFloat(match[1].replace(/,/g, '')); } } 
+                    else if (t.type === '進貨/支出') { if (t._rule || t.rawExpenses > 0) { s.expenses += t.rawExpenses || 0; } else { const match = t.content.match(/雜支:.*?\$([\d,]+)/); if (match) s.expenses += parseFloat(match[1].replace(/,/g, '')); } } 
                     else if (t.type === '直營報表') { s.directStoreSales += t.income; const expense = t.rawExpenses || 0; const cogs = t.cost - expense; s.directStoreExp += expense; s.directStoreCost += cogs; }
                 });
                 s.shipmentMargin = s.shipmentRev - s.shipmentCost; s.directStoreNet = s.directStoreSales - (s.directStoreExp + s.directStoreCost); return s;
@@ -1720,7 +1820,8 @@
             const expenseBreakdown = useMemo(() => {
                 const map = {};
                 allTransInRange.forEach(t => {
-                    if (t.type === '進貨/支出') { const match = t.content.match(/【其他費用】\n(.*?): \$([\d,]+)/); if (match) { const name = match[1].trim(); if (!name.includes('加盟器材')) { map[name] = (map[name] || 0) + parseFloat(match[2].replace(/,/g, '')); } } else if (t.content.match(/雜支: (.*?) \$([\d,]+)/)) { const m = t.content.match(/雜支: (.*?) \$([\d,]+)/); map[m[1]] = (map[m[1]] || 0) + parseFloat(m[2].replace(/,/g, '')); } } 
+                    if (t.type === '進貨/支出' && t._rule) { if (t.rawExpenses) { const name = t._rule === 'freightBill' ? '公司支出_運費(扣訂貨運費後)' : t._expName; map[name] = (map[name] || 0) + t.rawExpenses; } }
+                    else if (t.type === '進貨/支出') { const match = t.content.match(/【其他費用】\n(.*?): \$([\d,]+)/); if (match) { const name = match[1].trim(); if (!name.includes('加盟器材')) { map[name] = (map[name] || 0) + parseFloat(match[2].replace(/,/g, '')); } } else if (t.content.match(/雜支: (.*?) \$([\d,]+)/)) { const m = t.content.match(/雜支: (.*?) \$([\d,]+)/); map[m[1]] = (map[m[1]] || 0) + parseFloat(m[2].replace(/,/g, '')); } } 
                     else if (t.type === '直營報表' && t.rawExpenses > 0) map['直營店-營運支出'] = (map['直營店-營運支出'] || 0) + t.rawExpenses; 
                     else if (t.type === '加盟' && t.franchiseData) { if (t.franchiseData.setupExpenses) t.franchiseData.setupExpenses.forEach(e => map['加盟開辦費'] = (map['加盟開辦費'] || 0) + e.amount); if (t.franchiseData.starterCost > 0) map['加盟-贈品成本'] = (map['加盟-贈品成本'] || 0) + t.franchiseData.starterCost; if (t.franchiseData.chaileaseTax > 0) map['加盟-隱形稅額'] = (map['加盟-隱形稅額'] || 0) + t.franchiseData.chaileaseTax; if (t.franchiseData.chaileaseFee > 0) map['加盟-中租手續費'] = (map['加盟-中租手續費'] || 0) + t.franchiseData.chaileaseFee; } 
                     else if (t.type === '出貨' && Number(t.shipping) > 0) map['物流運費成本'] = (map['物流運費成本'] || 0) + Number(t.shipping);
