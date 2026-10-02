@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>加盟進銷存管理系統 Pro v66 (權限協作版)</title>
+    <title>加盟進銷存管理系統 Pro v68 (權限協作版)</title>
     
     <!-- 修正：加入空白 favicon 以消除 404 錯誤 -->
     <link rel="icon" href="data:,">
@@ -93,7 +93,9 @@
         };
 
         // v66 價格遷移：在 Firestore 設定載入後自動修正價格
-        const MIGRATION_VERSION = 'v66b';
+        // v67：鱈花枝自 2026/09/01 起工廠進價改為 130元/斤 (每箱30斤 = 3900)，出貨價維持 5700
+        // v68：原味沙拉自 2026/10/01 起由 45 漲為 50 (進價、出貨價同步)
+        const MIGRATION_VERSION = 'v68';
         const V66_PRICE_UPDATES = {
             'cut': { cost: 3750 },
             'cucumber': { cost: 400, price: 400 },
@@ -104,6 +106,31 @@
             'bag': { cost: 29, price: 29 }
         };
         const V66_NEW_ITEM = { id: 'choco_rice', name: '巧克力米', category: '其他', cost: 175, price: 175, unit: '罐' };
+        // 依序套用；已完成的版本不再重套，避免覆蓋之後在「設定」頁手動改過的價格
+        const PRICE_MIGRATIONS = [
+            { version: 'v66b', updates: V66_PRICE_UPDATES },
+            { version: 'v67', updates: { 'cut': { cost: 3900 } } },
+            { version: 'v68', updates: { 'salad_orig': { cost: 50, price: 50 } } }
+        ];
+
+        // 價格歷史：單據日期在 until(含) 之前時使用該筆舊價格；之後則用「設定」頁的目前價格
+        // 之後再調價：在此加一筆「調價前一天」的舊價格，並到「設定」頁改成新價格即可
+        const PRICE_HISTORY = {
+            'cut': [{ until: '2026-08-31', cost: 3750 }],                // 鱈花枝 125元/斤 x 30斤；9/1 起 130元/斤 = 3900
+            'salad_orig': [{ until: '2026-09-30', cost: 45, price: 45 }] // 原味沙拉；10/1 起 50
+        };
+        const getHistoricalValue = (item, date, field) => {
+            if (!item) return 0;
+            const history = PRICE_HISTORY[item.id];
+            if (history && date) {
+                const d = moment(date, ['YYYY-MM-DD', 'YYYY/MM/DD']);
+                const hit = history.find(h => h[field] !== undefined && d.isSameOrBefore(moment(h.until, 'YYYY-MM-DD'), 'day'));
+                if (hit) return hit[field];
+            }
+            return item[field] || 0;
+        };
+        const getCostOnDate = (item, date) => getHistoricalValue(item, date, 'cost');
+        const getPriceOnDate = (item, date) => getHistoricalValue(item, date, 'price');
 
         const migrateSettingsV66 = async (settingsRef, currentData) => {
             if (currentData.migrationVersion === MIGRATION_VERSION) return currentData;
@@ -111,8 +138,13 @@
             const newItems = [...(currentData.items || [])];
             let changed = false;
 
+            const doneIdx = PRICE_MIGRATIONS.findIndex(m => m.version === currentData.migrationVersion);
+            const priceUpdates = PRICE_MIGRATIONS.slice(doneIdx + 1).reduce((acc, m) => {
+                Object.entries(m.updates).forEach(([id, u]) => { acc[id] = { ...(acc[id] || {}), ...u }; });
+                return acc;
+            }, {});
             newItems.forEach((item, idx) => {
-                const update = V66_PRICE_UPDATES[item.id];
+                const update = priceUpdates[item.id];
                 if (update) {
                     Object.keys(update).forEach(key => {
                         if (newItems[idx][key] !== update[key]) {
@@ -147,7 +179,7 @@
             if (changed) {
                 const updatedData = { ...currentData, items: newItems, starterPack: newStarterPack, constants: newConstants, migrationVersion: MIGRATION_VERSION };
                 await settingsRef.set(updatedData);
-                console.log('v66b 設定遷移完成');
+                console.log(`${MIGRATION_VERSION} 設定遷移完成`);
                 return updatedData;
             }
 
@@ -157,7 +189,7 @@
 
         const DEFAULT_SETTINGS = {
             items: [
-                { id: 'cut', name: '花枝', category: '箱裝', cost: 3750, price: 5700, unit: '箱', isBox: true },
+                { id: 'cut', name: '花枝', category: '箱裝', cost: 3900, price: 5700, unit: '箱', isBox: true },
                 { id: 'squid', name: '墨魚', category: '箱裝', cost: 2640, price: 4200, unit: '箱', isBox: true },
                 { id: 'shrimp', name: '蝦球', category: '箱裝', cost: 4500, price: 6600, unit: '箱', isBox: true },
                 { id: 'burdock', name: '牛蒡', category: '箱裝', cost: 2040, price: 3600, unit: '箱', isBox: true },
@@ -165,7 +197,7 @@
                 { id: 'pepper', name: '椒鹽粉(2斤)', category: '其他', cost: 460, price: 460, unit: '包' },
                 { id: 'soul', name: '黯然銷魂粉(2斤)', category: '其他', cost: 600, price: 600, unit: '包' },
                 { id: 'chili', name: '青花辣椒粉(1斤)', category: '其他', cost: 390, price: 390, unit: '包' },
-                { id: 'salad_orig', name: '原味沙拉', category: '沙拉', cost: 45, price: 45, unit: '包' },
+                { id: 'salad_orig', name: '原味沙拉', category: '沙拉', cost: 50, price: 50, unit: '包' },
                 { id: 'salad_mus', name: '芥末沙拉', category: '沙拉', cost: 60, price: 60, unit: '包' },
                 { id: 'salad_honey', name: '蜂蜜沙拉', category: '沙拉', cost: 60, price: 60, unit: '包' },
                 { id: 'boat_med', name: '特中(餐盒)', category: '包材', cost: 105, price: 105, unit: '條' },
@@ -329,6 +361,18 @@
                 db.collection('company_data').doc('main_system').collection('transactions').doc(String(id)).update(newFields);
             };
 
+            const applyTransactionUpdates = async (updates) => {
+                if (!user || !db) return false;
+                if (!checkWritePermission()) return false;
+                const col = db.collection('company_data').doc('main_system').collection('transactions');
+                for (let i = 0; i < updates.length; i += 400) {
+                    const batch = db.batch();
+                    updates.slice(i, i + 400).forEach(u => batch.update(col.doc(String(u.id)), u.fields));
+                    await batch.commit();
+                }
+                return true;
+            };
+
             const deleteTransaction = async (id, type) => {
                 if (!user || !db) return;
                 const actionType = type === '直營報表' ? 'direct' : 'general';
@@ -364,7 +408,7 @@
             const saveSettings = (newSettings) => {
                 if (!user || !db) return;
                 if (!checkWritePermission()) return;
-                db.collection('company_data').doc('main_system').collection('data').doc('settings').set(newSettings).then(() => alert('設定已儲存！')).catch(err => alert('儲存失敗: ' + err.message));
+                db.collection('company_data').doc('main_system').collection('data').doc('settings').set({ ...newSettings, migrationVersion: MIGRATION_VERSION }).then(() => alert('設定已儲存！')).catch(err => alert('儲存失敗: ' + err.message));
             };
 
             const uniqueFranchises = useMemo(() => {
@@ -401,7 +445,7 @@
                 <div className="min-h-screen max-w-5xl mx-auto bg-white shadow-xl flex flex-col">
                     <div className="bg-slate-800 text-white p-4 sticky top-0 z-50 shadow-md">
                         <div className="flex justify-between items-center mb-2">
-                            <h1 className="text-lg font-bold"><i className="fa-solid fa-cloud mr-2 text-green-400"></i>加盟系統 Pro v66 <span className="text-xs bg-purple-500 px-1 rounded ml-1">多人協作版</span></h1>
+                            <h1 className="text-lg font-bold"><i className="fa-solid fa-cloud mr-2 text-green-400"></i>加盟系統 Pro v68 <span className="text-xs bg-purple-500 px-1 rounded ml-1">多人協作版</span></h1>
                             <div className="flex items-center space-x-2">
                                 <span className="text-xs text-slate-300 hidden md:inline">{user.email} ({role})</span>
                                 <button onClick={() => firebase.auth().signOut()} className="text-xs bg-slate-700 px-2 py-1 rounded hover:bg-slate-600">登出</button>
@@ -429,7 +473,7 @@
                                 {activeTab === 'direct' && <DirectStoreTab items={appSettings.items} inventory={inventory} onSubmit={addTransaction} onUpdateInv={updateInventory} transactions={transactions} onDelete={deleteTransaction} role={role} settings={appSettings} />}
                                 {activeTab === 'franchise' && <FranchiseTab items={appSettings.items} inventory={inventory} onSubmit={addTransaction} onUpdateInv={updateInventory} onUpdateTrans={updateTransaction} onDelete={deleteTransaction} transactions={transactions} franchises={uniqueFranchises} settings={appSettings} genReceipt={generateFormattedReceipt} role={role} />}
                                 {activeTab === 'report' && <ReportTab transactions={transactions} onDelete={deleteTransaction} items={appSettings.items} role={role} settings={appSettings} />}
-                                {activeTab === 'settings' && <SettingsTab settings={appSettings} onSave={saveSettings} role={role} />}
+                                {activeTab === 'settings' && <SettingsTab settings={appSettings} onSave={saveSettings} role={role} transactions={transactions} onApplyTransUpdates={applyTransactionUpdates} />}
                             </div>
                         )}
                     </div>
@@ -531,6 +575,7 @@
             };
 
             const processSubmission = (pDate, pIncome, pExpense, pNote, pItems) => {
+                pItems = pItems.map(item => ({ ...item, cost: getCostOnDate(item, pDate) }));
                 const totalCostOfGoods = pItems.reduce((sum, item) => sum + (item.cost * item.qty), 0);
                 const totalCost = totalCostOfGoods + pExpense;
                 const profit = pIncome - totalCost;
@@ -750,7 +795,7 @@
                 let productTotal = 0; let itemDetails = [];
                 Object.entries(cart).forEach(([id, qty]) => { 
                     const item = items.find(i => i.id === id); 
-                    if(item) { productTotal += (isTransfer ? 0 : item.price) * qty; itemDetails.push({...item, qty, price: isTransfer ? 0 : item.price}); } 
+                    if(item) { const unitPrice = isTransfer ? 0 : getPriceOnDate(item, orderDate); productTotal += unitPrice * qty; itemDetails.push({...item, qty, price: unitPrice, cost: getCostOnDate(item, orderDate)}); } 
                 });
                 return { itemDetails, productTotal };
             };
@@ -775,7 +820,7 @@
                 let productCost = 0;
                 itemDetails.forEach(item => { 
                     const originalItem = items.find(i => i.id === item.id);
-                    productCost += (originalItem ? originalItem.cost : 0) * item.qty; 
+                    productCost += getCostOnDate(originalItem, orderDate) * item.qty; 
                     onUpdateInv(item.id, -item.qty); 
                 });
                 
@@ -898,7 +943,7 @@
                             <div className={`grid grid-cols-2 gap-3 ${isReadonly ? 'readonly-mode' : ''}`}>
                                 {items.map(item=>(
                                     <div key={item.id} className={`bg-white p-3 shadow-sm border flex justify-between ${isTransfer ? 'border-orange-200':''}`}>
-                                        <div><div className="font-bold">{item.name}</div><div className="text-xs text-gray-500">${item.price}</div></div>
+                                        <div><div className="font-bold">{item.name}</div><div className="text-xs text-gray-500">${getPriceOnDate(item, orderDate)}</div></div>
                                         <div className="flex items-center space-x-2">
                                             <button onClick={()=>handleQtyChange(item.id, (cart[item.id]||0)-1)} className="w-8 border">-</button>
                                             <input type="number" value={cart[item.id]||''} onChange={e=>handleQtyChange(item.id, e.target.value)} className="w-10 text-center border"/>
@@ -909,7 +954,7 @@
                                 ))}
                             </div>
                             <div className="sticky bottom-4 bg-slate-800 text-white p-4 rounded-lg flex justify-between shadow-xl">
-                                <div className="font-bold">總計: ${isTransfer ? (prepareOrderData().itemDetails.reduce((a,b)=>a+(items.find(i=>i.id===b.id).cost*b.qty),0) + Number(shippingFee)).toLocaleString() : (prepareOrderData().productTotal + extraItems.reduce((a,b)=>a+b.amount,0) + Number(shippingFee)).toLocaleString()}</div>
+                                <div className="font-bold">總計: ${isTransfer ? (prepareOrderData().itemDetails.reduce((a,b)=>a+(getCostOnDate(items.find(i=>i.id===b.id), orderDate)*b.qty),0) + Number(shippingFee)).toLocaleString() : (prepareOrderData().productTotal + extraItems.reduce((a,b)=>a+b.amount,0) + Number(shippingFee)).toLocaleString()}</div>
                                 <div className="space-x-3 flex">
                                     <button onClick={copyToClipboard} className="bg-green-600 px-3 py-2 rounded text-sm flex items-center"><i className="fa-regular fa-copy mr-1"></i> 複製</button>
                                     {!isReadonly && <button onClick={handleSubmit} className={`${isTransfer?'bg-orange-500':'bg-blue-500'} px-4 py-2 rounded font-bold text-sm`}>{isTransfer ? '確認調撥' : '確認出貨'}</button>}
@@ -1014,7 +1059,7 @@
             const [endDate, setEndDate] = useState(moment().endOf('month').format('YYYY-MM-DD'));
             const [dashboardView, setDashboardView] = useState('frozen');
 
-            const updateCart = (id, f, v) => { setStockCart(prev => { const cur = prev[id] || { qty: 0, cost: 0, currentInv: inventory[id] || 0 }; let nc = cur.cost; if(f==='qty'&&!nc && mode==='purchase'){const it=items.find(i=>i.id===id); if(it)nc=it.cost;} if(f==='cost')nc=Number(v); return {...prev, [id]:{...cur, qty:f==='qty'?Number(v):cur.qty, cost:nc}}; }); };
+            const updateCart = (id, f, v) => { setStockCart(prev => { const cur = prev[id] || { qty: 0, cost: 0, currentInv: inventory[id] || 0 }; let nc = cur.cost; if(f==='qty'&&!nc && mode==='purchase'){const it=items.find(i=>i.id===id); if(it)nc=getCostOnDate(it, date);} if(f==='cost')nc=Number(v); return {...prev, [id]:{...cur, qty:f==='qty'?Number(v):cur.qty, cost:nc}}; }); };
             
             const handleStockIn = () => { 
                 if(isReadonly) return;
@@ -1154,12 +1199,12 @@
                 if(isReadonly) return;
                 if(!fName) return alert('請輸入店名'); 
                 let goodsCost = 0; let equipCost = 0;
-                starterPack.forEach(p => { const item = items.find(i => i.id === p.id); let unitCost = (p.id === 'equip_set') ? 43200 : (item ? item.cost : 0); const cost = unitCost * p.qty; if(p.type === 'equipment' || p.id === 'equip_set') equipCost += cost; else goodsCost += cost; if (p.qty > 0 && p.id !== 'equip_set') onUpdateInv(p.id, -p.qty); });
+                starterPack.forEach(p => { const item = items.find(i => i.id === p.id); let unitCost = (p.id === 'equip_set') ? 43200 : getCostOnDate(item, incomeDate); const cost = unitCost * p.qty; if(p.type === 'equipment' || p.id === 'equip_set') equipCost += cost; else goodsCost += cost; if (p.qty > 0 && p.id !== 'equip_set') onUpdateInv(p.id, -p.qty); });
                 const invisibleCost = chaileaseTax + chaileaseFee; const totalCost = setupTotal + equipCost + goodsCost + invisibleCost; const recordedRevenue = Number(totalRevenue); const finalProfit = recordedRevenue - totalCost;
                 let content = `【加盟開通】_${fName}\n入帳日期：${moment(incomeDate).format('YYYY/MM/DD')}\n`;
                 if (payType === 'cash') content += `付款方式：現金\n總金額：$${recordedRevenue.toLocaleString()}\n`; else if (payType === 'install_chailease') { content += `付款方式：中租分期\n發票金額(基準)：$${recordedRevenue.toLocaleString()}\n`; content += `[隱形支出] 發票稅額: $${chaileaseTax}\n中租手續費: $${chaileaseFee}\n`; } else if (payType === 'install_cash') { content += `付款方式：現金分期\n總金額：$${recordedRevenue.toLocaleString()}\n(頭款:${cashInstData.initial}, 尾款:${cashInstData.remaining})\n`; }
                 content += `------------------\n[成本結構]\n`; setupExpenses.forEach(e => content += `開辦費-${e.name}: $${e.amount}\n`); content += `器材成本: $${equipCost}\n贈品成本: $${goodsCost}\n淨利預估: $${finalProfit.toLocaleString()}`;
-                const fData = { fName, incomeDate, payType, baseRevenue: totalRevenue, chaileaseTax, chaileaseFee, setupExpenses, equipDate, frozenDate, starterPack, equipCost, goodsCost, starterCost: equipCost + goodsCost, cashInst: payType==='install_cash' ? cashInstData : null };
+                const fData = { fName, incomeDate, payType, baseRevenue: totalRevenue, chaileaseTax, chaileaseFee, setupExpenses, equipDate, frozenDate, starterPack: starterPack.map(p => ({ ...p, unitCost: p.id === 'equip_set' ? 43200 : getCostOnDate(items.find(i => i.id === p.id), incomeDate) })), equipCost, goodsCost, starterCost: equipCost + goodsCost, cashInst: payType==='install_cash' ? cashInstData : null };
                 const rec = { id: Date.now(), date: moment(incomeDate).format('YYYY/MM/DD'), time: moment().format('A h:mm'), type: '加盟', franchise: fName, content, shipping: 0, income: recordedRevenue, cost: totalCost, profit: finalProfit, total: recordedRevenue, franchiseData: fData }; 
                 onSubmit(rec); alert('加盟資料已建立！'); setFName(''); setSetupExpenses([]); setEquipDate(''); setFrozenDate(''); setCashInstData({ initial: '', period: '', remaining: '', perPeriod: '' });
             };
@@ -1216,6 +1261,301 @@
                             )}
                         </div>
                     )}
+                </div>
+            );
+        };
+
+
+        // ---- 依新進價重算成本：找出調價生效日之後、仍以舊進價記帳的單據 ----
+        const parseTxDate = (d) => moment(d, ['YYYY/MM/DD', 'YYYY-MM-DD']);
+        const fmtMoney = (n) => Math.round(n || 0).toLocaleString();
+
+        const buildCostRecalcPlan = (transactions, items, itemId) => {
+            const setting = items.find(i => i.id === itemId);
+            const last = [...(PRICE_HISTORY[itemId] || [])].reverse().find(h => h.cost !== undefined);
+            if (!setting || !last) return null;
+            const effectiveFrom = moment(last.until, 'YYYY-MM-DD').add(1, 'day');
+            const oldCost = last.cost;
+            const oldPrice = [...(PRICE_HISTORY[itemId] || [])].reverse().find(h => h.price !== undefined)?.price;
+            const rows = []; const priceWarnings = [];
+            transactions.forEach(t => {
+                if (parseTxDate(t.date).isBefore(effectiveFrom, 'day')) return;
+                if ((t.costAdjustments || []).some(a => a.id === itemId)) return;
+                const newCost = getCostOnDate(setting, t.date);
+                if (newCost === oldCost) return;
+                let lines = [];
+                if (['出貨', '調撥', '直營報表', '進貨/支出'].includes(t.type)) {
+                    lines = (t.rawItems || []).map((ri, idx) => ({ idx, ri, qty: Number(ri.qty) || 0, used: typeof ri.cost === 'number' ? ri.cost : oldCost }));
+                } else if (t.type === '加盟' && t.franchiseData && t.franchiseData.starterPack) {
+                    lines = t.franchiseData.starterPack.map((ri, idx) => ({ idx, ri, qty: Number(ri.qty) || 0, used: typeof ri.unitCost === 'number' ? ri.unitCost : oldCost }));
+                }
+                // 只挑仍是「舊進價」的明細；手動輸入其他單價的進貨單不動
+                lines = lines.filter(l => l.ri.id === itemId && l.qty > 0 && l.used === oldCost);
+                if (lines.length > 0) {
+                    const qty = lines.reduce((a, l) => a + l.qty, 0);
+                    rows.push({ t, lines, qty, oldCost, newCost, delta: qty * (newCost - oldCost) });
+                }
+                if (oldPrice !== undefined && t.type === '出貨') {
+                    const oldPriceQty = (t.rawItems || []).filter(ri => ri.id === itemId && ri.price === oldPrice).reduce((a, ri) => a + (Number(ri.qty) || 0), 0);
+                    if (oldPriceQty > 0) priceWarnings.push({ t, qty: oldPriceQty, oldPrice, newPrice: getPriceOnDate(setting, t.date) });
+                }
+            });
+            rows.sort((a, b) => parseTxDate(a.t.date) - parseTxDate(b.t.date));
+            return { item: setting, effectiveFrom, oldCost, newCost: setting.cost, rows, priceWarnings };
+        };
+
+        const buildCostAdjustFields = (row, item) => {
+            const { t, delta, oldCost, newCost } = row;
+            const idxSet = new Set(row.lines.map(l => l.idx));
+            const stamp = { id: item.id, from: oldCost, to: newCost, qty: row.qty, delta, at: moment().format('YYYY/MM/DD HH:mm') };
+            const fields = { cost: (t.cost || 0) + delta, costAdjustments: [...(t.costAdjustments || []), stamp] };
+            let content = t.content || '';
+            if (t.type === '加盟') {
+                const fd = t.franchiseData;
+                fields.franchiseData = { ...fd, starterPack: fd.starterPack.map((p, i) => idxSet.has(i) ? { ...p, unitCost: newCost } : p), goodsCost: (fd.goodsCost || 0) + delta, starterCost: (fd.starterCost || 0) + delta };
+                fields.profit = (t.profit || 0) - delta;
+            } else {
+                fields.rawItems = t.rawItems.map((ri, i) => idxSet.has(i) ? { ...ri, cost: newCost } : ri);
+                if (t.type === '進貨/支出') {
+                    fields.total = (t.total || 0) - delta; // 進貨只影響付出金額，不影響損益
+                    row.lines.forEach(l => { content = content.replace(`${l.ri.name} x ${l.ri.qty} (單價$${oldCost})`, `${l.ri.name} x ${l.ri.qty} (單價$${newCost})`); });
+                } else {
+                    fields.profit = (t.profit || 0) - delta;
+                }
+            }
+            fields.content = `${content}\n[成本調整 ${stamp.at}] ${item.name} 進價 $${oldCost}→$${newCost}，成本 +$${fmtMoney(delta)}`;
+            return fields;
+        };
+
+        const CostRecalcPanel = ({ transactions, items, onApply, isReadonly }) => {
+            const targets = Object.keys(PRICE_HISTORY).filter(id => items.find(i => i.id === id) && PRICE_HISTORY[id].some(h => h.cost !== undefined));
+            const [target, setTarget] = useState(null);
+            const [excluded, setExcluded] = useState({});
+            const [busy, setBusy] = useState(false);
+            const plan = useMemo(() => target ? buildCostRecalcPlan(transactions, items, target) : null, [target, transactions, items]);
+            const selected = plan ? plan.rows.filter(r => !excluded[r.t.id]) : [];
+            const totalDelta = selected.reduce((a, r) => a + r.delta, 0);
+            const profitDelta = selected.filter(r => r.t.type !== '進貨/支出').reduce((a, r) => a + r.delta, 0);
+
+            const open = (id) => { setExcluded({}); setTarget(target === id ? null : id); };
+            const handleApply = async () => {
+                if (isReadonly || selected.length === 0) return;
+                if (!confirm(`確定將 ${selected.length} 筆單據的 ${plan.item.name} 成本改為新進價？\n成本合計 +$${fmtMoney(totalDelta)}，損益合計 -$${fmtMoney(profitDelta)}`)) return;
+                setBusy(true);
+                try {
+                    const ok = await onApply(selected.map(r => ({ id: r.t.id, fields: buildCostAdjustFields(r, plan.item) })));
+                    if (ok) { alert('已寫入成本調整'); setTarget(null); }
+                } catch (e) { console.error(e); alert('寫入失敗: ' + e.message); } finally { setBusy(false); }
+            };
+
+            return (
+                <div className="bg-amber-50 border border-amber-200 p-4 rounded shadow space-y-3">
+                    <h3 className="font-bold text-amber-800"><i className="fa-solid fa-calculator mr-2"></i>依新進價重算成本</h3>
+                    <div className="text-xs text-gray-600">調價生效日之後、仍以舊進價記帳的單據（出貨、調撥、直營日報、加盟贈品、進貨單價）。先預覽差額，勾選確認後才寫入；已調整過的單據不會重複計算。</div>
+                    <div className="flex flex-wrap gap-2">
+                        {targets.map(id => {
+                            const it = items.find(i => i.id === id); const last = [...PRICE_HISTORY[id]].reverse().find(h => h.cost !== undefined);
+                            return <button key={id} onClick={() => open(id)} className={`px-3 py-2 rounded text-sm font-bold border ${target === id ? 'bg-amber-600 text-white border-amber-600' : 'bg-white text-amber-700 border-amber-300'}`}>重算 {it.name} 成本（{moment(last.until, 'YYYY-MM-DD').add(1, 'day').format('YYYY/MM/DD')} 起）</button>;
+                        })}
+                    </div>
+                    {plan && (
+                        <div className="bg-white rounded border p-3 space-y-2">
+                            <div className="text-sm"><span className="font-bold">{plan.item.name}</span>：{plan.effectiveFrom.format('YYYY/MM/DD')} 起進價 <span className="text-gray-500">${plan.oldCost}</span> → <span className="font-bold text-red-600">${plan.newCost}</span> / {plan.item.unit}</div>
+                            {plan.rows.length === 0 ? <div className="text-green-600 text-sm font-bold py-2"><i className="fa-solid fa-check mr-1"></i>沒有需要重算的單據</div> : (
+                                <div className="overflow-x-auto custom-scrollbar">
+                                    <table className="w-full text-xs">
+                                        <thead><tr className="bg-gray-100 text-gray-600"><th className="p-1">選</th><th className="p-1 text-left">日期</th><th className="p-1 text-left">類型</th><th className="p-1 text-left">對象</th><th className="p-1 text-right">數量</th><th className="p-1 text-right">原成本</th><th className="p-1 text-right">新成本</th><th className="p-1 text-right">差額</th></tr></thead>
+                                        <tbody>
+                                            {plan.rows.map(r => (
+                                                <tr key={r.t.id} className={`border-b ${excluded[r.t.id] ? 'text-gray-300' : ''}`}>
+                                                    <td className="p-1 text-center"><input type="checkbox" checked={!excluded[r.t.id]} onChange={e => setExcluded({ ...excluded, [r.t.id]: !e.target.checked })} /></td>
+                                                    <td className="p-1 whitespace-nowrap">{r.t.date}</td>
+                                                    <td className="p-1 whitespace-nowrap">{r.t.type}</td>
+                                                    <td className="p-1">{r.t.franchise}</td>
+                                                    <td className="p-1 text-right num-font">{plan.item.isBox ? formatBoxQty(r.qty) : r.qty}</td>
+                                                    <td className="p-1 text-right num-font">{fmtMoney(r.qty * r.oldCost)}</td>
+                                                    <td className="p-1 text-right num-font">{fmtMoney(r.qty * r.newCost)}</td>
+                                                    <td className="p-1 text-right num-font font-bold text-red-600">+{fmtMoney(r.delta)}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                    <div className="flex flex-wrap justify-between items-center gap-2 mt-2 text-sm">
+                                        <div>已選 {selected.length} 筆，成本 <span className="font-bold text-red-600">+${fmtMoney(totalDelta)}</span>，損益 <span className="font-bold text-red-600">-${fmtMoney(profitDelta)}</span><div className="text-[10px] text-gray-400">進貨單只修正付出金額，不影響損益</div></div>
+                                        {!isReadonly && <button disabled={busy || selected.length === 0} onClick={handleApply} className="bg-red-600 disabled:bg-gray-300 text-white px-4 py-2 rounded font-bold">{busy ? '寫入中...' : '確認寫入'}</button>}
+                                    </div>
+                                </div>
+                            )}
+                            {plan.priceWarnings.length > 0 && (
+                                <div className="bg-yellow-50 border border-yellow-200 rounded p-2 text-xs text-yellow-800">
+                                    <div className="font-bold mb-1"><i className="fa-solid fa-triangle-exclamation mr-1"></i>以下出貨單仍以舊售價開立（此工具不改營收與應收，請視需要個別處理）</div>
+                                    {plan.priceWarnings.map(w => <div key={w.t.id}>{w.t.date} {w.t.franchise}：{w.qty}{plan.item.unit} × ${w.oldPrice}（新售價 ${w.newPrice}，差 ${fmtMoney(w.qty * (w.newPrice - w.oldPrice))}）</div>)}
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        // ---- 圖表分析 ----
+        const ChartCanvas = ({ config, height = 300 }) => {
+            const ref = useRef(null);
+            useEffect(() => {
+                if (!ref.current || !config) return;
+                const chart = new Chart(ref.current, config);
+                return () => chart.destroy();
+            }, [config]);
+            return <div className="relative" style={{ height }}><canvas ref={ref}></canvas></div>;
+        };
+
+        const shortMoney = (v) => Math.abs(v) >= 10000 ? `${(v / 10000).toFixed(1)}萬` : Math.round(v).toLocaleString();
+
+        // 與「總覽儀表板」相同的損益口徑
+        const summarizeTrans = (list) => {
+            const s = { shipRev: 0, shipGoods: 0, shipFreight: 0, transfer: 0, directRev: 0, directGoods: 0, directExp: 0, franRev: 0, franCost: 0, misc: 0 };
+            list.forEach(t => {
+                if (t.type === '出貨') { const fr = Number(t.shipping) || 0; s.shipRev += t.income || 0; s.shipFreight += fr; s.shipGoods += (t.cost || 0) - fr; }
+                else if (t.type === '調撥') s.transfer += t.cost || 0;
+                else if (t.type === '加盟') { s.franRev += t.income || 0; s.franCost += t.cost || 0; }
+                else if (t.type === '進貨/支出') { if (t.rawExpenses > 0) s.misc += t.rawExpenses; else { const m = (t.content || '').match(/雜支:.*?\$([\d,]+)/); if (m) s.misc += parseFloat(m[1].replace(/,/g, '')); } }
+                else if (t.type === '直營報表') { const e = t.rawExpenses || 0; s.directRev += t.income || 0; s.directExp += e; s.directGoods += (t.cost || 0) - e; }
+            });
+            s.rev = s.shipRev + s.directRev + s.franRev;
+            s.varCost = s.shipGoods + s.shipFreight + s.transfer + s.directGoods + s.directExp + s.franCost + s.misc;
+            s.net = s.rev - s.varCost;
+            return s;
+        };
+
+        const FROZEN_IDS = ['cut', 'squid', 'shrimp', 'burdock'];
+
+        const AnalyticsView = ({ transactions, items, rangeTrans, fixedPerMonth, monthsInRange, end }) => {
+            const noLabels = { datalabels: { display: false } };
+            const months = useMemo(() => { const arr = []; const e = moment(end).startOf('month'); for (let i = 5; i >= 0; i--) arr.push(e.clone().subtract(i, 'month').format('YYYY-MM')); return arr; }, [end]);
+            const byMonth = useMemo(() => { const map = {}; months.forEach(m => map[m] = []); transactions.forEach(t => { const m = parseTxDate(t.date).format('YYYY-MM'); if (map[m]) map[m].push(t); }); return map; }, [transactions, months]);
+
+            // 1. 區間損益瀑布
+            const range = useMemo(() => summarizeTrans(rangeTrans), [rangeTrans]);
+            const fixedTotal = fixedPerMonth * monthsInRange;
+            const waterfall = useMemo(() => {
+                const steps = [
+                    ['出貨營收', range.shipRev], ['直營業績', range.directRev], ['加盟收入', range.franRev],
+                    ['出貨商品成本', -range.shipGoods], ['物流運費', -range.shipFreight], ['調撥成本', -range.transfer],
+                    ['直營材料', -range.directGoods], ['直營支出', -range.directExp], ['加盟成本', -range.franCost], ['營運雜支', -range.misc],
+                    ['固定成本', -fixedTotal]
+                ].filter(([, v]) => Math.round(v) !== 0);
+                let run = 0; const labels = []; const data = []; const colors = [];
+                steps.forEach(([label, v]) => { labels.push(label); data.push([run, run + v]); colors.push(v >= 0 ? '#16a34a' : '#ef4444'); run += v; });
+                labels.push('淨利'); data.push([0, run]); colors.push(run >= 0 ? '#ca8a04' : '#b91c1c');
+                return { type: 'bar', data: { labels, datasets: [{ data, backgroundColor: colors }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, title: { display: true, text: `區間損益瀑布（已扣 ${monthsInRange} 個月固定成本）` }, tooltip: { callbacks: { label: c => { const [a, b] = c.raw; return `$${fmtMoney(b - a)}`; } } }, datalabels: { anchor: 'end', align: 'top', font: { size: 10 }, formatter: (v, c) => c.dataIndex === labels.length - 1 ? shortMoney(v[1]) : shortMoney(v[1] - v[0]) } }, scales: { y: { ticks: { callback: v => shortMoney(v) } } } } };
+            }, [range, fixedTotal, monthsInRange]);
+
+            // 2. 近 6 個月損益趨勢
+            const trend = useMemo(() => {
+                const sums = months.map(m => summarizeTrans(byMonth[m]));
+                return { type: 'bar', data: { labels: months, datasets: [
+                    { type: 'line', label: '淨利(扣固定成本)', data: sums.map(s => s.net - fixedPerMonth), borderColor: '#ca8a04', backgroundColor: '#ca8a04', tension: 0.3 },
+                    { label: '營收', data: sums.map(s => s.rev), backgroundColor: '#3b82f6' },
+                    { label: '變動成本+支出', data: sums.map(s => s.varCost), backgroundColor: '#f87171' },
+                    { label: '固定成本', data: sums.map(() => fixedPerMonth), backgroundColor: '#cbd5e1' }
+                ] }, options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { ...noLabels, title: { display: true, text: `近 6 個月損益趨勢（至 ${months[5]}）` }, legend: { position: 'bottom' }, tooltip: { callbacks: { label: c => `${c.dataset.label}: $${fmtMoney(c.raw)}` } } }, scales: { y: { ticks: { callback: v => shortMoney(v) } } } } };
+            }, [months, byMonth, fixedPerMonth]);
+
+            // 3. 單品毛利（區間內出貨）
+            const itemMargins = useMemo(() => {
+                const map = {};
+                rangeTrans.filter(t => t.type === '出貨').forEach(t => (t.rawItems || []).forEach(ri => {
+                    if (!ri.id) return;
+                    const setting = items.find(i => i.id === ri.id);
+                    if (!map[ri.id]) map[ri.id] = { id: ri.id, name: setting ? setting.name : ri.name, unit: ri.unit, isBox: !!(setting && setting.isBox), qty: 0, rev: 0, cost: 0 };
+                    const unitCost = typeof ri.cost === 'number' ? ri.cost : getCostOnDate(setting, t.date);
+                    map[ri.id].qty += ri.qty; map[ri.id].rev += (ri.price || 0) * ri.qty; map[ri.id].cost += unitCost * ri.qty;
+                }));
+                return Object.values(map).map(r => ({ ...r, margin: r.rev - r.cost, rate: r.rev ? (r.rev - r.cost) / r.rev : 0 })).sort((a, b) => b.margin - a.margin);
+            }, [rangeTrans, items]);
+            const maxMargin = Math.max(1, ...itemMargins.map(r => Math.abs(r.margin)));
+
+            // 4. 應收帳齡（截至今天，不受區間影響）
+            const aging = useMemo(() => {
+                const buckets = ['0–30天', '31–60天', '61–90天', '90天以上']; const map = {};
+                transactions.filter(t => (t.type === '出貨' && t.total > 0) || t.type === '應收帳款').forEach(t => {
+                    const remain = (t.total || 0) - (t.payments || []).reduce((a, p) => a + p.amount, 0);
+                    if (remain <= 0) return;
+                    const days = moment().diff(parseTxDate(t.date), 'days');
+                    const b = days <= 30 ? 0 : days <= 60 ? 1 : days <= 90 ? 2 : 3;
+                    if (!map[t.franchise]) map[t.franchise] = [0, 0, 0, 0];
+                    map[t.franchise][b] += remain;
+                });
+                const names = Object.keys(map).sort((a, b) => map[b].reduce((x, y) => x + y, 0) - map[a].reduce((x, y) => x + y, 0));
+                const total = names.reduce((a, n) => a + map[n].reduce((x, y) => x + y, 0), 0);
+                const overdue = names.reduce((a, n) => a + map[n][2] + map[n][3], 0);
+                const colors = ['#93c5fd', '#fbbf24', '#f97316', '#dc2626'];
+                return { total, overdue, count: names.length, config: { type: 'bar', data: { labels: names, datasets: buckets.map((b, i) => ({ label: b, data: names.map(n => map[n][i]), backgroundColor: colors[i] })) }, options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { ...noLabels, title: { display: true, text: '各加盟店未收款帳齡' }, legend: { position: 'bottom' }, tooltip: { callbacks: { label: c => `${c.dataset.label}: $${fmtMoney(c.raw)}` } } }, scales: { x: { stacked: true, ticks: { callback: v => shortMoney(v) } }, y: { stacked: true } } } } };
+            }, [transactions]);
+
+            // 5. 加盟店月進貨趨勢
+            const franchiseTrend = useMemo(() => {
+                const map = {};
+                months.forEach((m, mi) => byMonth[m].forEach(t => { if (t.type !== '出貨' || !t.franchise || t.franchise === '湳雅直營店') return; if (!map[t.franchise]) map[t.franchise] = months.map(() => 0); map[t.franchise][mi] += t.income || 0; }));
+                const names = Object.keys(map).sort((a, b) => map[b].reduce((x, y) => x + y, 0) - map[a].reduce((x, y) => x + y, 0)).slice(0, 8);
+                const palette = ['#2563eb', '#16a34a', '#db2777', '#ea580c', '#7c3aed', '#0891b2', '#ca8a04', '#64748b'];
+                return { type: 'line', data: { labels: months, datasets: names.map((n, i) => ({ label: n, data: map[n], borderColor: palette[i], backgroundColor: palette[i], tension: 0.3 })) }, options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { ...noLabels, title: { display: true, text: '加盟店月進貨金額（前 8 名）' }, legend: { position: 'bottom' }, tooltip: { callbacks: { label: c => `${c.dataset.label}: $${fmtMoney(c.raw)}` } } }, scales: { y: { ticks: { callback: v => shortMoney(v) } } } } };
+            }, [months, byMonth]);
+
+            // 6. 冷凍品進貨 vs 出庫箱數
+            const boxFlow = useMemo(() => {
+                const inQ = months.map(() => 0); const outQ = months.map(() => 0);
+                months.forEach((m, mi) => byMonth[m].forEach(t => {
+                    const frozen = (list) => (list || []).filter(ri => FROZEN_IDS.includes(ri.id)).reduce((a, ri) => a + (Number(ri.qty) || 0), 0);
+                    if (t.type === '進貨/支出') inQ[mi] += frozen(t.rawItems);
+                    else if (['出貨', '調撥', '直營報表'].includes(t.type)) outQ[mi] += frozen(t.rawItems);
+                    else if (t.type === '加盟' && t.franchiseData) outQ[mi] += frozen(t.franchiseData.starterPack);
+                }));
+                return { type: 'bar', data: { labels: months, datasets: [{ label: '進貨箱數', data: inQ, backgroundColor: '#16a34a' }, { label: '出庫箱數(出貨/調撥/直營/加盟)', data: outQ, backgroundColor: '#3b82f6' }] }, options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { title: { display: true, text: '四大冷凍品 進貨 vs 出庫（箱）' }, legend: { position: 'bottom' }, datalabels: { anchor: 'end', align: 'top', font: { size: 10 }, formatter: v => v ? formatBoxQty(v) : '' }, tooltip: { callbacks: { label: c => `${c.dataset.label}: ${formatBoxQty(c.raw)}` } } } } };
+            }, [months, byMonth]);
+
+            const netAfterFixed = range.net - fixedTotal;
+            return (
+                <div className="space-y-4 animate-fade-in">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        <div className="bg-blue-50 p-3 rounded shadow border-l-4 border-blue-500"><div className="text-xs text-gray-500 font-bold">區間營收</div><div className="text-lg font-bold text-blue-700 num-font">${fmtMoney(range.rev)}</div></div>
+                        <div className="bg-red-50 p-3 rounded shadow border-l-4 border-red-400"><div className="text-xs text-gray-500 font-bold">成本+支出(含固定)</div><div className="text-lg font-bold text-red-600 num-font">-${fmtMoney(range.varCost + fixedTotal)}</div></div>
+                        <div className="bg-yellow-50 p-3 rounded shadow border-l-4 border-yellow-500"><div className="text-xs text-gray-500 font-bold">淨利(扣固定成本)</div><div className={`text-lg font-bold num-font ${netAfterFixed >= 0 ? 'text-green-600' : 'text-red-600'}`}>${fmtMoney(netAfterFixed)}</div><div className="text-[10px] text-gray-400">淨利率 {range.rev ? (netAfterFixed / range.rev * 100).toFixed(1) : 0}%</div></div>
+                        <div className="bg-purple-50 p-3 rounded shadow border-l-4 border-purple-500"><div className="text-xs text-gray-500 font-bold">未收款(今日)</div><div className="text-lg font-bold text-purple-700 num-font">${fmtMoney(aging.total)}</div><div className={`text-[10px] ${aging.overdue > 0 ? 'text-red-600 font-bold' : 'text-gray-400'}`}>逾 60 天 ${fmtMoney(aging.overdue)}</div></div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="bg-white p-3 rounded shadow"><ChartCanvas config={waterfall} /></div>
+                        <div className="bg-white p-3 rounded shadow"><ChartCanvas config={trend} /></div>
+                    </div>
+                    <div className="bg-white p-4 rounded shadow">
+                        <h3 className="font-bold text-gray-700 mb-2">單品毛利（區間內出貨給加盟店）</h3>
+                        {itemMargins.length === 0 ? <div className="text-sm text-gray-400">區間內沒有出貨資料</div> : (
+                            <div className="overflow-x-auto custom-scrollbar">
+                                <table className="w-full text-xs md:text-sm">
+                                    <thead><tr className="bg-gray-100 text-gray-600"><th className="p-1 text-left">品項</th><th className="p-1 text-right">數量</th><th className="p-1 text-right">營收</th><th className="p-1 text-right">成本</th><th className="p-1 text-right">毛利</th><th className="p-1 text-right">毛利率</th><th className="p-1 w-1/4"></th></tr></thead>
+                                    <tbody>
+                                        {itemMargins.map(r => (
+                                            <tr key={r.id} className="border-b">
+                                                <td className="p-1 font-bold whitespace-nowrap">{r.name}{PRICE_HISTORY[r.id] && <span className="ml-1 text-[10px] bg-amber-100 text-amber-700 px-1 rounded">調價 {moment(PRICE_HISTORY[r.id][PRICE_HISTORY[r.id].length - 1].until, 'YYYY-MM-DD').add(1, 'day').format('M/D')}</span>}</td>
+                                                <td className="p-1 text-right num-font whitespace-nowrap">{r.isBox ? formatBoxQty(r.qty) : r.qty}{r.unit}</td>
+                                                <td className="p-1 text-right num-font">{fmtMoney(r.rev)}</td>
+                                                <td className="p-1 text-right num-font text-red-500">{fmtMoney(r.cost)}</td>
+                                                <td className={`p-1 text-right num-font font-bold ${r.margin >= 0 ? 'text-green-600' : 'text-red-600'}`}>{fmtMoney(r.margin)}</td>
+                                                <td className="p-1 text-right num-font">{(r.rate * 100).toFixed(1)}%</td>
+                                                <td className="p-1"><div className={`h-2 rounded ${r.margin >= 0 ? 'bg-green-400' : 'bg-red-400'}`} style={{ width: `${Math.abs(r.margin) / maxMargin * 100}%` }}></div></td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                                <div className="text-[10px] text-gray-400 mt-1">成本以每筆出貨當時記錄的進價計算；調價前的舊單據可到「設定 → 依新進價重算成本」修正。</div>
+                            </div>
+                        )}
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="bg-white p-3 rounded shadow">{aging.count === 0 ? <div className="h-[300px] flex items-center justify-center text-green-600 font-bold"><i className="fa-solid fa-check mr-2"></i>目前沒有未收款</div> : <ChartCanvas config={aging.config} height={Math.max(300, aging.count * 36 + 90)} />}</div>
+                        <div className="bg-white p-3 rounded shadow"><ChartCanvas config={franchiseTrend} /></div>
+                    </div>
+                    <div className="bg-white p-3 rounded shadow"><ChartCanvas config={boxFlow} /></div>
                 </div>
             );
         };
@@ -1360,6 +1700,7 @@
                     <div className="flex space-x-2 border-b mb-4">
                         <button onClick={()=>setViewMode('dashboard')} className={`pb-2 px-4 ${viewMode==='dashboard'?'border-b-2 border-indigo-600 font-bold text-indigo-600':'text-gray-500'}`}>總覽儀表板</button>
                         <button onClick={()=>setViewMode('monthly')} className={`pb-2 px-4 ${viewMode==='monthly'?'border-b-2 border-indigo-600 font-bold text-indigo-600':'text-gray-500'}`}>區間月結報表</button>
+                        <button onClick={()=>setViewMode('charts')} className={`pb-2 px-4 ${viewMode==='charts'?'border-b-2 border-indigo-600 font-bold text-indigo-600':'text-gray-500'}`}>圖表分析</button>
                     </div>
 
                     <div className="bg-white p-4 rounded shadow flex items-center gap-4">
@@ -1369,7 +1710,9 @@
                         <input type="date" value={end} onChange={e => setEnd(e.target.value)} className="border p-1 rounded" />
                     </div>
                     
-                    {viewMode === 'dashboard' ? (
+                    {viewMode === 'charts' ? (
+                        <AnalyticsView transactions={transactions} items={items} rangeTrans={allTransInRange} fixedPerMonth={allFixedCosts} monthsInRange={monthsInRange} end={end} />
+                    ) : viewMode === 'dashboard' ? (
                         <div className="space-y-6 animate-fade-in">
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                                 <div className="bg-blue-50 p-3 rounded shadow border-l-4 border-blue-500"><div className="text-xs text-gray-500 font-bold mb-1">加盟出貨</div><div className="flex justify-between items-baseline"><span className="text-xs text-gray-400">總計</span><span className="text-lg font-bold text-blue-700">${stats.shipmentRev.toLocaleString()}</span></div><div className="flex justify-between items-baseline"><span className="text-xs text-gray-400">毛利</span><span className="text-sm font-bold text-green-600">+${stats.shipmentMargin.toLocaleString()}</span></div></div>
@@ -1579,7 +1922,7 @@
             );
         };
 
-        const SettingsTab = ({ settings, onSave, role }) => {
+        const SettingsTab = ({ settings, onSave, role, transactions, onApplyTransUpdates }) => {
             const isReadonly = role === ROLES.VIEWER;
             const [localSettings, setLocalSettings] = useState(settings ? JSON.parse(JSON.stringify(settings)) : null);
             useEffect(() => { if(settings) setLocalSettings(JSON.parse(JSON.stringify(settings))); }, [settings]);
@@ -1595,6 +1938,7 @@
             
             return (
                 <div className={`space-y-4 pb-10 ${isReadonly ? 'readonly-mode' : ''}`}>
+                    <CostRecalcPanel transactions={transactions || []} items={settings.items} onApply={onApplyTransUpdates} isReadonly={isReadonly} />
                     <h3 className="font-bold border-b pb-2">參數設定</h3>
                     <div className="grid grid-cols-2 gap-4 bg-white p-4 shadow rounded mb-4"><div><label className="text-xs">中租合約總額 (基準)</label><input type="number" value={localSettings.constants.chaileaseBase} onChange={e=>handleConstantChange('chaileaseBase', e.target.value)} className="border p-1 w-full"/></div><div><label className="text-xs">中租手續費 (額外)</label><input type="number" value={localSettings.constants.chaileaseFee} onChange={e=>handleConstantChange('chaileaseFee', e.target.value)} className="border p-1 w-full"/></div><div><label className="text-xs">開辦費預算</label><input type="number" value={localSettings.constants.setupBudget} onChange={e=>handleConstantChange('setupBudget', e.target.value)} className="border p-1 w-full"/></div></div>
                     <h3 className="font-bold border-b pb-2">加盟贈送清單預設值</h3>
